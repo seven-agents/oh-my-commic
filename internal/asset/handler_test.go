@@ -521,6 +521,48 @@ func TestUpdateCharacterComicifiesOnlyNewUpload(t *testing.T) {
 	}
 }
 
+func TestCreateCharacterRejectsForeignBookImage(t *testing.T) {
+	env := newHandlerTestEnv(t)
+	mine, _ := env.books.Create(1, "我的书", "ghibli", "")
+	other, _ := env.books.Create(2, "别人的书", "ghibli", "")
+	// A raw upload physically stored under the OTHER user's book.
+	foreignUpload := env.seedUpload(t, other.ID)
+
+	base := "/api/books/" + strconv.FormatInt(mine.ID, 10) + "/characters"
+	body := `{"name":"狐狸","type":"character","imageUrl":"` + foreignUpload + `"}`
+	rec := env.serveAs(t, httptest.NewRequest(http.MethodPost, base, strings.NewReader(body)), 1)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("跨书图片应为 400, got %d: %s", rec.Code, rec.Body)
+	}
+	if env.editor.calls != 0 {
+		t.Fatalf("comicify must NOT run for foreign image, ran %d", env.editor.calls)
+	}
+}
+
+func TestUpdateCharacterRejectsForeignBookImage(t *testing.T) {
+	env := newHandlerTestEnv(t)
+	mine, _ := env.books.Create(1, "我的书", "ghibli", "")
+	other, _ := env.books.Create(2, "别人的书", "ghibli", "")
+	base := "/api/books/" + strconv.FormatInt(mine.ID, 10) + "/characters"
+
+	// Create a plain character (no image) owned by user 1.
+	rec := env.serveAs(t, httptest.NewRequest(http.MethodPost, base,
+		strings.NewReader(`{"name":"狐狸","type":"character"}`)), 1)
+	var created models.Character
+	_ = json.Unmarshal(rec.Body.Bytes(), &created)
+	item := base + "/" + strconv.FormatInt(created.ID, 10)
+
+	foreignUpload := env.seedUpload(t, other.ID)
+	rec = env.serveAs(t, httptest.NewRequest(http.MethodPut, item,
+		strings.NewReader(`{"name":"狐狸","type":"character","imageUrl":"`+foreignUpload+`"}`)), 1)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("更新跨书图片应为 400, got %d: %s", rec.Code, rec.Body)
+	}
+	if env.editor.calls != 0 {
+		t.Fatalf("comicify must NOT run for foreign image, ran %d", env.editor.calls)
+	}
+}
+
 func TestCreateSceneComicifiesUpload(t *testing.T) {
 	env := newHandlerTestEnv(t)
 	b, _ := env.books.Create(1, "书", "ghibli", "")
