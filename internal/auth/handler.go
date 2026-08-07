@@ -35,13 +35,20 @@ func NewHandler(svc *Service) *Handler {
 	return &Handler{svc: svc}
 }
 
+// Mount registers the auth endpoints onto r using their absolute paths. These
+// routes are public (no authentication middleware) so the enclosing router must
+// not wrap them with auth.RequireUser.
+func (h *Handler) Mount(r chi.Router) {
+	r.Post("/api/register", h.Register)
+	r.Post("/api/login", h.Login)
+	r.Post("/api/logout", h.Logout)
+}
+
 // Routes builds a chi router mounting the auth endpoints. It is separated from
 // ServeHTTP so callers can mount these routes into a larger router later.
 func (h *Handler) Routes() http.Handler {
 	r := chi.NewRouter()
-	r.Post("/api/register", h.Register)
-	r.Post("/api/login", h.Login)
-	r.Post("/api/logout", h.Logout)
+	h.Mount(r)
 	return r
 }
 

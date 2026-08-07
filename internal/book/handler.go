@@ -44,12 +44,20 @@ func NewHandler(svc *Service) *Handler {
 // handler can rely on a valid user ID being present in the context.
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
+	h.Mount(r)
+	return r
+}
+
+// Mount registers the five book endpoints onto r using their absolute paths.
+// Like Routes, it does NOT attach auth.RequireUser: the caller must mount these
+// routes inside a group already wrapped with RequireUser so a valid user ID is
+// present in the request context.
+func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/books", h.List)
 	r.Post("/api/books", h.Create)
 	r.Get("/api/books/{id}", h.Get)
 	r.Put("/api/books/{id}", h.Update)
 	r.Delete("/api/books/{id}", h.Delete)
-	return r
 }
 
 // List handles GET /api/books.
