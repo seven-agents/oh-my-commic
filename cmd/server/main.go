@@ -78,6 +78,18 @@ func main() {
 	)
 	renderHandler := render.NewHandler(renderSvc)
 
+	// Serve the built SPA when a dist directory is present. In dev the frontend
+	// runs under Vite (with a proxy to this server), so a missing dist simply
+	// leaves the backend in API-only mode.
+	var static http.Handler
+	webDist := get("WEB_DIST", "web/dist")
+	if spa, err := httpx.NewSPAHandler(webDist); err != nil {
+		log.Printf("SPA 未启用（%s 缺少 index.html，API-only 模式）", webDist)
+	} else {
+		static = spa
+		log.Printf("SPA 已启用，从 %s 提供前端", webDist)
+	}
+
 	router := httpx.NewRouter(httpx.Deps{
 		Session: sess,
 		Auth:    authHandler,
@@ -88,11 +100,20 @@ func main() {
 		Story:   storyHandler,
 		Render:  renderHandler,
 		Media:   media.Handler(),
+		Static:  static,
 	})
 
 	addr := ":" + cfg.Port
 	log.Printf("listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, router))
+}
+
+// get returns the environment value for key k, or def when it is unset/empty.
+func get(k, def string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return def
 }
 
 // loadDotEnv reads a minimal .env file at path and sets any keys that are not
