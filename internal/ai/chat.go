@@ -15,10 +15,16 @@ type Msg struct {
 	Content string `json:"content"`
 }
 
+// chatMaxTokens caps the model's output length. It must be generous enough that
+// a multi-panel structured storyboard JSON is never truncated mid-object (a
+// truncated response is invalid JSON and fails downstream parsing).
+const chatMaxTokens = 8192
+
 // chatRequest is the OpenAI chat-completions request body.
 type chatRequest struct {
-	Model    string `json:"model"`
-	Messages []Msg  `json:"messages"`
+	Model     string `json:"model"`
+	Messages  []Msg  `json:"messages"`
+	MaxTokens int    `json:"max_tokens,omitempty"`
 }
 
 // chatResponse captures the fields we need from the response.
@@ -35,7 +41,7 @@ func (c *Client) Chat(ctx context.Context, messages []Msg) (string, error) {
 		return "", fmt.Errorf("ai: chat requires at least one message")
 	}
 
-	payload, err := json.Marshal(chatRequest{Model: c.TextModel, Messages: messages})
+	payload, err := json.Marshal(chatRequest{Model: c.TextModel, Messages: messages, MaxTokens: chatMaxTokens})
 	if err != nil {
 		return "", fmt.Errorf("ai: marshal chat request: %w", err)
 	}

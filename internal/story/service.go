@@ -110,14 +110,14 @@ func draftsToPanels(chapterID int64, drafts []ai.PanelDraftV2) []models.Panel {
 		ids := make([]int64, 0, len(d.Characters))
 		exprs := make(map[int64]string, len(d.Characters))
 		for _, cr := range d.Characters {
-			ids = append(ids, cr.ID)
-			exprs[cr.ID] = cr.Expression
+			ids = append(ids, int64(cr.ID))
+			exprs[int64(cr.ID)] = cr.Expression
 		}
 		panels = append(panels, models.Panel{
 			ChapterID:       chapterID,
 			Caption:         d.Caption,
 			CharacterIDs:    ids,
-			SceneID:         d.SceneID,
+			SceneID:         int64(d.SceneID),
 			ImagePrompt:     d.ImagePrompt,
 			Location:        d.Location,
 			Event:           d.Event,

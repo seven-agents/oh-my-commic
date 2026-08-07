@@ -3,6 +3,7 @@ package story
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -65,6 +66,9 @@ func (h *Handler) StoryboardChat(w http.ResponseWriter, r *http.Request) {
 
 	reply, panels, err := h.svc.StoryboardChat(userID, chapterID, req.Messages, req.PanelCount)
 	if err != nil {
+		// Log the real cause server-side (never leaked to the client; the
+		// wrapped error carries upstream detail but not the API key).
+		log.Printf("storyboard-chat chapter %d failed: %v", chapterID, err)
 		writeStoryError(w, err)
 		return
 	}
