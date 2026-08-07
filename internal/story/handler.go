@@ -3,6 +3,7 @@ package story
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -36,8 +37,11 @@ func (h *Handler) Mount(r chi.Router) {
 }
 
 // storyboardChatRequest is the body for POST /api/chapters/{id}/storyboard-chat.
+// PanelCount is optional: when omitted or 0, the prompt uses its default frame
+// range instead of a specific target.
 type storyboardChatRequest struct {
-	Messages []ai.Msg `json:"messages"`
+	Messages   []ai.Msg `json:"messages"`
+	PanelCount int      `json:"panelCount"`
 }
 
 // storyboardChatResponse is the body returned by the storyboard-chat endpoint:
@@ -60,8 +64,11 @@ func (h *Handler) StoryboardChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	reply, panels, err := h.svc.StoryboardChat(userID, chapterID, req.Messages)
+	reply, panels, err := h.svc.StoryboardChat(userID, chapterID, req.Messages, req.PanelCount)
 	if err != nil {
+		// Log the real cause server-side (never leaked to the client; the
+		// wrapped error carries upstream detail but not the API key).
+		log.Printf("storyboard-chat chapter %d failed: %v", chapterID, err)
 		writeStoryError(w, err)
 		return
 	}

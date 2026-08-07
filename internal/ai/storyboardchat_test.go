@@ -18,6 +18,59 @@ func fakeChatServer(content string) *httptest.Server {
 	}))
 }
 
+// TestStoryboardChatToleratesStringIDs guards the flexID fix: LLMs frequently
+// emit ids as JSON STRINGS ("1") instead of numbers (1). A rigid int64 field
+// made the whole storyboard parse fail (→ 502). Here ids arrive quoted and must
+// still resolve to the real assets.
+func TestStoryboardChatToleratesStringIDs(t *testing.T) {
+	content := `{"reply":"好的","panels":[{"location":"森林","sceneId":"5",` +
+		`"characters":[{"id":"1","expression":"开心"}],"event":"玩耍",` +
+		`"caption":"一起玩","imagePrompt":"forest play"}]}`
+	ts := fakeChatServer(content)
+	defer ts.Close()
+	c := &Client{Key: "sk-x", TextBaseURL: ts.URL, TextModel: "qwen-plus", HTTP: ts.Client()}
+
+	res, err := StoryboardChat(context.Background(), c, []Msg{{Role: "user", Content: "讲故事"}}, twoCharOneScene(), 1)
+	if err != nil {
+		t.Fatalf("string ids should parse, got error: %v", err)
+	}
+	if len(res.Panels) != 1 {
+		t.Fatalf("want 1 panel, got %d", len(res.Panels))
+	}
+	p := res.Panels[0]
+	if p.SceneID != 5 {
+		t.Fatalf("sceneId string \"5\" should parse to 5, got %d", p.SceneID)
+	}
+	if len(p.Characters) != 1 || p.Characters[0].ID != 1 {
+		t.Fatalf("character id string \"1\" should parse to 1 and survive, got %+v", p.Characters)
+	}
+}
+
+// TestStoryboardChatToleratesNameAsID guards the second flexID degradation: when
+// the book has no matching assets, the model sometimes quotes a NAME as the id
+// ("小狐狸"). That must degrade to "no id" (dropped by sanitize), NOT fail the
+// whole parse with a 502.
+func TestStoryboardChatToleratesNameAsID(t *testing.T) {
+	content := `{"reply":"好的","panels":[{"location":"森林","sceneId":0,` +
+		`"characters":[{"id":"小狐狸","expression":"开心"}],"event":"玩耍",` +
+		`"caption":"一起玩","imagePrompt":"forest play"}]}`
+	ts := fakeChatServer(content)
+	defer ts.Close()
+	c := &Client{Key: "sk-x", TextBaseURL: ts.URL, TextModel: "qwen-plus", HTTP: ts.Client()}
+
+	// Empty asset context (no characters) — the name-id must be dropped.
+	res, err := StoryboardChat(context.Background(), c, []Msg{{Role: "user", Content: "讲故事"}}, AssetContext{}, 1)
+	if err != nil {
+		t.Fatalf("a name-as-id must not fail the parse, got error: %v", err)
+	}
+	if len(res.Panels) != 1 {
+		t.Fatalf("want 1 panel, got %d", len(res.Panels))
+	}
+	if len(res.Panels[0].Characters) != 0 {
+		t.Fatalf("unresolvable name-id should be dropped, got %+v", res.Panels[0].Characters)
+	}
+}
+
 // twoCharOneScene is an asset context with characters 1 & 2 and scene 5. It is
 // the reference set every sanitize assertion validates against.
 func twoCharOneScene() AssetContext {
@@ -46,7 +99,7 @@ func TestStoryboardChatParsesAndSanitizes(t *testing.T) {
 	defer ts.Close()
 
 	c := &Client{Key: "sk-x", TextBaseURL: ts.URL, TextModel: "qwen-plus", HTTP: ts.Client()}
-	res, err := StoryboardChat(context.Background(), c, nil, twoCharOneScene())
+	res, err := StoryboardChat(context.Background(), c, nil, twoCharOneScene(), 0)
 	if err != nil {
 		t.Fatalf("storyboard chat: %v", err)
 	}
@@ -97,7 +150,7 @@ func TestStoryboardChatDropsSceneWhenThreeCharacters(t *testing.T) {
 	defer ts.Close()
 
 	c := &Client{Key: "sk-x", TextBaseURL: ts.URL, TextModel: "qwen-plus", HTTP: ts.Client()}
-	res, err := StoryboardChat(context.Background(), c, nil, assets)
+	res, err := StoryboardChat(context.Background(), c, nil, assets, 0)
 	if err != nil {
 		t.Fatalf("storyboard chat: %v", err)
 	}
@@ -119,7 +172,7 @@ func TestStoryboardChatFencedJSON(t *testing.T) {
 	defer ts.Close()
 
 	c := &Client{Key: "sk-x", TextBaseURL: ts.URL, TextModel: "qwen-plus", HTTP: ts.Client()}
-	res, err := StoryboardChat(context.Background(), c, nil, AssetContext{})
+	res, err := StoryboardChat(context.Background(), c, nil, AssetContext{}, 0)
 	if err != nil {
 		t.Fatalf("代码块 JSON 应解析: %v", err)
 	}
@@ -137,7 +190,7 @@ func TestStoryboardChatNoObjectErrors(t *testing.T) {
 	defer ts.Close()
 
 	c := &Client{Key: "sk-x", TextBaseURL: ts.URL, TextModel: "qwen-plus", HTTP: ts.Client()}
-	if _, err := StoryboardChat(context.Background(), c, nil, AssetContext{}); err == nil {
+	if _, err := StoryboardChat(context.Background(), c, nil, AssetContext{}, 0); err == nil {
 		t.Fatal("无 JSON 对象时应报错")
 	}
 }
@@ -148,7 +201,7 @@ func TestStoryboardChatMalformedErrors(t *testing.T) {
 	defer ts.Close()
 
 	c := &Client{Key: "sk-x", TextBaseURL: ts.URL, TextModel: "qwen-plus", HTTP: ts.Client()}
-	if _, err := StoryboardChat(context.Background(), c, nil, AssetContext{}); err == nil {
+	if _, err := StoryboardChat(context.Background(), c, nil, AssetContext{}, 0); err == nil {
 		t.Fatal("非法 JSON 应报错")
 	}
 }

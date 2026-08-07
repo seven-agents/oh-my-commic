@@ -9,6 +9,10 @@ import type { AssetIndex } from './chapter/assetLookup'
 const INTRO =
   '嗨！我是你的 AI 小助手～给我讲讲你的故事吧，比如：棉花糖在森林里等妈妈回家～'
 
+// 可选的目标分镜格数，默认 6。也可以直接在对话里说“分成4格”。
+const PANEL_COUNT_OPTIONS = [4, 6, 8] as const
+const DEFAULT_PANEL_COUNT = 6
+
 type StoryboardChatReply = {
   reply: string
   panels: Panel[]
@@ -32,6 +36,7 @@ export function ChatStoryboard({
 }: ChatStoryboardProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState('')
+  const [panelCount, setPanelCount] = useState<number>(DEFAULT_PANEL_COUNT)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const listRef = useRef<HTMLDivElement>(null)
@@ -51,7 +56,7 @@ export function ChatStoryboard({
     try {
       const res = await api.post<StoryboardChatReply>(
         `/api/chapters/${chapterId}/storyboard-chat`,
-        { messages: next },
+        { messages: next, panelCount },
       )
       setMessages([...next, { role: 'assistant', content: res.reply }])
       onPanelsChange(res.panels ?? [])
@@ -90,6 +95,12 @@ export function ChatStoryboard({
           </p>
         )}
 
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-semibold text-ink-soft">分几格：</span>
+          <PanelCountPicker value={panelCount} onChange={setPanelCount} disabled={sending} />
+          <span className="text-xs text-ink-soft/70">也可以直接对我说「分成4格」～</span>
+        </div>
+
         <div className="flex items-end gap-2">
           <textarea
             value={draft}
@@ -122,6 +133,41 @@ export function ChatStoryboard({
       </Card>
 
       <StoryboardPanelList panels={panels} index={index} onPanelsChange={onPanelsChange} />
+    </div>
+  )
+}
+
+interface PanelCountPickerProps {
+  value: number
+  onChange: (count: number) => void
+  disabled?: boolean
+}
+
+// 童趣的分段选择器：4 / 6 / 8 格，选中的一格用暖色高亮。
+function PanelCountPicker({ value, onChange, disabled = false }: PanelCountPickerProps) {
+  return (
+    <div className="inline-flex gap-1 rounded-full bg-cream/70 p-1" role="group" aria-label="选择分镜格数">
+      {PANEL_COUNT_OPTIONS.map((count) => {
+        const active = count === value
+        return (
+          <button
+            key={count}
+            type="button"
+            disabled={disabled}
+            aria-pressed={active}
+            onClick={() => onChange(count)}
+            className={[
+              'min-w-[2.5rem] rounded-full px-3 py-1 text-sm font-semibold transition',
+              active
+                ? 'bg-gradient-to-b from-peach to-coral text-white shadow-soft-sm'
+                : 'text-ink-soft hover:bg-white/70',
+              disabled ? 'cursor-not-allowed opacity-60' : '',
+            ].join(' ')}
+          >
+            {count}
+          </button>
+        )
+      })}
     </div>
   )
 }

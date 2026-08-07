@@ -73,3 +73,9 @@ export type ChatMessage = {
   role: 'user' | 'assistant' | 'system'
   content: string
 }
+
+// storyboard-chat 请求体：对话历史 + 可选的目标分镜格数
+export type StoryboardChatRequest = {
+  messages: ChatMessage[]
+  panelCount?: number
+}

@@ -119,7 +119,7 @@ func TestStoryboardChatReturnsReply(t *testing.T) {
 	env := newStoryTestEnv(t, `{"reply":"我们一起想想开头吧！","panels":[]}`)
 	ch := env.newChapter(t, 1)
 
-	reply, panels, err := env.svc.StoryboardChat(1, ch.ID, []ai.Msg{{Role: "user", Content: "帮我"}})
+	reply, panels, err := env.svc.StoryboardChat(1, ch.ID, []ai.Msg{{Role: "user", Content: "帮我"}}, 0)
 	if err != nil {
 		t.Fatalf("storyboard chat: %v", err)
 	}
@@ -135,7 +135,7 @@ func TestStoryboardChatCrossUserNotFound(t *testing.T) {
 	env := newStoryTestEnv(t, `{"reply":"hi","panels":[]}`)
 	ch := env.newChapter(t, 1)
 
-	_, _, err := env.svc.StoryboardChat(2, ch.ID, []ai.Msg{{Role: "user", Content: "帮我"}})
+	_, _, err := env.svc.StoryboardChat(2, ch.ID, []ai.Msg{{Role: "user", Content: "帮我"}}, 0)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("跨用户应 ErrNotFound: %v", err)
 	}
@@ -159,7 +159,7 @@ func TestStoryboardChatPersistsPanels(t *testing.T) {
 		`"event":"出发探险","caption":"出发","imagePrompt":"fox"},` +
 		`{"location":"家里","sceneId":0,"characters":[],"event":"回到家","caption":"回家","imagePrompt":"home"}]}`)
 
-	reply, panels, err := env.svc.StoryboardChat(1, ch.ID, nil)
+	reply, panels, err := env.svc.StoryboardChat(1, ch.ID, nil, 0)
 	if err != nil {
 		t.Fatalf("chat: %v", err)
 	}
@@ -196,7 +196,7 @@ func TestStoryboardChatBadJSONErrors(t *testing.T) {
 	env := newStoryTestEnv(t, "抱歉无法生成")
 	ch := env.newChapter(t, 1)
 
-	_, _, err := env.svc.StoryboardChat(1, ch.ID, nil)
+	_, _, err := env.svc.StoryboardChat(1, ch.ID, nil, 0)
 	if err == nil {
 		t.Fatal("无 JSON 应报错")
 	}
@@ -213,13 +213,13 @@ func TestStoryboardChatRegenerateSucceeds(t *testing.T) {
 	env := newStoryTestEnv(t, body)
 	ch := env.newChapter(t, 1)
 
-	_, first, err := env.svc.StoryboardChat(1, ch.ID, nil)
+	_, first, err := env.svc.StoryboardChat(1, ch.ID, nil, 0)
 	if err != nil || len(first) != 1 {
 		t.Fatalf("首次应成功: %v (%d)", err, len(first))
 	}
 
 	// Second turn on the same chapter (already storyboarding) must NOT error.
-	_, second, err := env.svc.StoryboardChat(1, ch.ID, nil)
+	_, second, err := env.svc.StoryboardChat(1, ch.ID, nil, 0)
 	if err != nil {
 		t.Fatalf("重生成不应报错: %v", err)
 	}
@@ -253,7 +253,7 @@ func TestStoryboardChatFiltersForeignIDs(t *testing.T) {
 	}
 	env.setContent(strings.Replace(body, "VALID", strconv.FormatInt(char.ID, 10), 1))
 
-	_, panels, err := env.svc.StoryboardChat(1, ch.ID, nil)
+	_, panels, err := env.svc.StoryboardChat(1, ch.ID, nil, 0)
 	if err != nil {
 		t.Fatalf("chat: %v", err)
 	}
