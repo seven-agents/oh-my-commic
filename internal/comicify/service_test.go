@@ -75,6 +75,30 @@ func TestCharacterComicifies(t *testing.T) {
 	}
 }
 
+func TestCharacterDownscalesLargeReference(t *testing.T) {
+	store := storage.Local{Root: t.TempDir()}
+	large := makePNG(t, 1600, 1200)
+	srcURL, err := store.SaveBytes(4, ".png", large)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	imgSrv := newImageServer(t)
+	defer imgSrv.Close()
+
+	editor := &fakeEditor{remoteURL: imgSrv.URL + "/x.png"}
+	svc := NewService(editor, store, imgSrv.Client())
+
+	c := models.Character{Name: "小蓝", Gender: "女孩", Personality: "好奇"}
+	if _, err := svc.Character(context.Background(), 4, c, srcURL); err != nil {
+		t.Fatalf("Character: %v", err)
+	}
+	// A large decodable reference is downscaled and re-encoded as JPEG.
+	if len(editor.gotRefs) != 1 || !strings.HasPrefix(editor.gotRefs[0], "data:image/jpeg;base64,") {
+		t.Fatalf("expected downscaled jpeg data uri, got prefix of: %.40q", editor.gotRefs)
+	}
+}
+
 func TestSceneComicifies(t *testing.T) {
 	store := storage.Local{Root: t.TempDir()}
 	srcURL, err := store.SaveBytes(8, ".png", pngBytes)
