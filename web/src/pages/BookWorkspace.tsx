@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { AppHeader } from '../components/AppHeader'
 import { AssetPanel } from '../components/AssetPanel'
@@ -48,6 +48,17 @@ export default function BookWorkspace() {
     }
   }, [bookId])
 
+  // 删除资产后重新拉取角色 + 场景，让卡片消失。
+  const refetchAssets = useCallback(async () => {
+    if (!bookId) return
+    const [chars, scs] = await Promise.all([
+      api.get<Character[]>(`/api/books/${bookId}/characters`),
+      api.get<Scene[]>(`/api/books/${bookId}/scenes`),
+    ])
+    setCharacters(chars ?? [])
+    setScenes(scs ?? [])
+  }, [bookId])
+
   return (
     <div className="min-h-screen bg-cream">
       <AppHeader
@@ -82,7 +93,12 @@ export default function BookWorkspace() {
             </header>
 
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-              <AssetPanel bookId={bookId} characters={characters} scenes={scenes} />
+              <AssetPanel
+                bookId={bookId}
+                characters={characters}
+                scenes={scenes}
+                onAssetsChanged={refetchAssets}
+              />
               <ChapterList
                 bookId={bookId}
                 chapters={chapters}
