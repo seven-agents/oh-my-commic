@@ -36,8 +36,8 @@ type Deps struct {
 	// Panel mounts the per-chapter panel routes (list + bulk replace + edit,
 	// behind RequireUser). Optional: nil disables panel routes.
 	Panel *panel.Handler
-	// Story mounts the per-chapter AI storyboard routes (converse + generate,
-	// behind RequireUser). Optional: nil disables story routes.
+	// Story mounts the per-chapter conversational storyboard route
+	// (storyboard-chat, behind RequireUser). Optional: nil disables story routes.
 	Story *story.Handler
 	// Render mounts the per-panel AI image render route (behind RequireUser).
 	// Optional: nil disables the render route.

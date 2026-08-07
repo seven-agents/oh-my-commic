@@ -237,11 +237,21 @@ func (s *Service) buildPrompt(userID, bookID int64, p models.Panel) (string, []s
 		b.WriteString(p.Caption)
 		b.WriteString("。")
 	}
+	if p.Location != "" {
+		b.WriteString("地点：")
+		b.WriteString(p.Location)
+		b.WriteString("。")
+	}
 	for _, c := range matchedChars {
-		b.WriteString(characterSummary(c))
+		b.WriteString(characterSummary(c, p.CharExpressions[c.ID]))
 	}
 	if hasScene {
 		b.WriteString(sceneSummary(matchedScene))
+	}
+	if p.Event != "" {
+		b.WriteString("事件：")
+		b.WriteString(p.Event)
+		b.WriteString("。")
 	}
 	if p.ImagePrompt != "" {
 		b.WriteString("补充：")
@@ -327,12 +337,13 @@ func matchScene(all []models.Scene, sceneID int64) (models.Scene, bool) {
 	return models.Scene{}, false
 }
 
-// characterSummary renders a short, non-empty-field summary of a character.
-func characterSummary(c models.Character) string {
+// characterSummary renders a short, non-empty-field summary of a character,
+// including the panel-specific expression when one is provided.
+func characterSummary(c models.Character, expression string) string {
 	var b strings.Builder
 	b.WriteString("角色")
 	b.WriteString(c.Name)
-	parts := make([]string, 0, 3)
+	parts := make([]string, 0, 4)
 	if c.Gender != "" {
 		parts = append(parts, "性别"+c.Gender)
 	}
@@ -341,6 +352,9 @@ func characterSummary(c models.Character) string {
 	}
 	if c.Personality != "" {
 		parts = append(parts, "性格"+c.Personality)
+	}
+	if strings.TrimSpace(expression) != "" {
+		parts = append(parts, "表情"+expression)
 	}
 	if len(parts) > 0 {
 		b.WriteString("（")

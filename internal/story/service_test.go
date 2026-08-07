@@ -115,30 +115,33 @@ func seedUsers(t *testing.T, d *sql.DB, n int) {
 	}
 }
 
-func TestConverseReturnsReply(t *testing.T) {
-	env := newStoryTestEnv(t, "我们一起想想开头吧！")
+func TestStoryboardChatReturnsReply(t *testing.T) {
+	env := newStoryTestEnv(t, `{"reply":"我们一起想想开头吧！","panels":[]}`)
 	ch := env.newChapter(t, 1)
 
-	reply, err := env.svc.Converse(1, ch.ID, []ai.Msg{{Role: "user", Content: "帮我"}})
+	reply, panels, err := env.svc.StoryboardChat(1, ch.ID, []ai.Msg{{Role: "user", Content: "帮我"}})
 	if err != nil {
-		t.Fatalf("converse: %v", err)
+		t.Fatalf("storyboard chat: %v", err)
 	}
 	if reply != "我们一起想想开头吧！" {
 		t.Fatalf("reply 错: %q", reply)
 	}
+	if len(panels) != 0 {
+		t.Fatalf("空 panels 应返回空, got %d", len(panels))
+	}
 }
 
-func TestConverseCrossUserNotFound(t *testing.T) {
-	env := newStoryTestEnv(t, "hi")
+func TestStoryboardChatCrossUserNotFound(t *testing.T) {
+	env := newStoryTestEnv(t, `{"reply":"hi","panels":[]}`)
 	ch := env.newChapter(t, 1)
 
-	_, err := env.svc.Converse(2, ch.ID, []ai.Msg{{Role: "user", Content: "帮我"}})
+	_, _, err := env.svc.StoryboardChat(2, ch.ID, []ai.Msg{{Role: "user", Content: "帮我"}})
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("跨用户应 ErrNotFound: %v", err)
 	}
 }
 
-func TestGenerateStoryboardPersistsPanels(t *testing.T) {
+func TestStoryboardChatPersistsPanels(t *testing.T) {
 	env := newStoryTestEnv(t, "placeholder")
 	ch, b := env.newChapterWithBook(t, 1)
 
@@ -150,13 +153,18 @@ func TestGenerateStoryboardPersistsPanels(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create scene: %v", err)
 	}
-	env.setContent("分镜：[{\"caption\":\"出发\",\"characterIds\":[" +
-		strconv.FormatInt(char.ID, 10) + "],\"sceneId\":" + strconv.FormatInt(scene.ID, 10) +
-		",\"imagePrompt\":\"fox\"},{\"caption\":\"回家\",\"characterIds\":[],\"sceneId\":0,\"imagePrompt\":\"home\"}]")
+	env.setContent(`分镜：{"reply":"好的","panels":[` +
+		`{"location":"森林边","sceneId":` + strconv.FormatInt(scene.ID, 10) +
+		`,"characters":[{"id":` + strconv.FormatInt(char.ID, 10) + `,"expression":"好奇"}],` +
+		`"event":"出发探险","caption":"出发","imagePrompt":"fox"},` +
+		`{"location":"家里","sceneId":0,"characters":[],"event":"回到家","caption":"回家","imagePrompt":"home"}]}`)
 
-	panels, err := env.svc.GenerateStoryboard(1, ch.ID, nil, 2)
+	reply, panels, err := env.svc.StoryboardChat(1, ch.ID, nil)
 	if err != nil {
-		t.Fatalf("generate: %v", err)
+		t.Fatalf("chat: %v", err)
+	}
+	if reply != "好的" {
+		t.Fatalf("reply 错: %q", reply)
 	}
 	if len(panels) != 2 {
 		t.Fatalf("应有2个分镜, got %d", len(panels))
@@ -164,8 +172,14 @@ func TestGenerateStoryboardPersistsPanels(t *testing.T) {
 	if panels[0].Caption != "出发" || panels[0].Status != "pending" {
 		t.Fatalf("首个分镜错: %+v", panels[0])
 	}
+	if panels[0].Location != "森林边" || panels[0].Event != "出发探险" {
+		t.Fatalf("结构化字段错: %+v", panels[0])
+	}
 	if len(panels[0].CharacterIDs) != 1 || panels[0].CharacterIDs[0] != char.ID || panels[0].SceneID != scene.ID {
-		t.Fatalf("索引解析错: %+v", panels[0])
+		t.Fatalf("引用解析错: %+v", panels[0])
+	}
+	if panels[0].CharExpressions[char.ID] != "好奇" {
+		t.Fatalf("表情持久化错: %+v", panels[0].CharExpressions)
 	}
 
 	// Chapter status must advance to storyboarding.
@@ -178,21 +192,11 @@ func TestGenerateStoryboardPersistsPanels(t *testing.T) {
 	}
 }
 
-func TestGenerateStoryboardCrossUserNotFound(t *testing.T) {
-	env := newStoryTestEnv(t, "[]")
-	ch := env.newChapter(t, 1)
-
-	_, err := env.svc.GenerateStoryboard(2, ch.ID, nil, 1)
-	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("跨用户应 ErrNotFound: %v", err)
-	}
-}
-
-func TestGenerateStoryboardBadJSONErrors(t *testing.T) {
+func TestStoryboardChatBadJSONErrors(t *testing.T) {
 	env := newStoryTestEnv(t, "抱歉无法生成")
 	ch := env.newChapter(t, 1)
 
-	_, err := env.svc.GenerateStoryboard(1, ch.ID, nil, 1)
+	_, _, err := env.svc.StoryboardChat(1, ch.ID, nil)
 	if err == nil {
 		t.Fatal("无 JSON 应报错")
 	}
@@ -201,21 +205,21 @@ func TestGenerateStoryboardBadJSONErrors(t *testing.T) {
 	}
 }
 
-// TestGenerateStoryboardRegenerateSucceeds guards against the state-machine bug:
-// regenerating a storyboard on a chapter already in "storyboarding" must succeed
-// (no self-transition exists) rather than fail after the panels were replaced.
-func TestGenerateStoryboardRegenerateSucceeds(t *testing.T) {
-	body := "[{\"caption\":\"v\",\"characterIds\":[],\"sceneId\":0,\"imagePrompt\":\"x\"}]"
+// TestStoryboardChatRegenerateSucceeds guards against the state-machine bug:
+// a second turn on a chapter already in "storyboarding" must succeed (no
+// self-transition exists) rather than fail after the panels were replaced.
+func TestStoryboardChatRegenerateSucceeds(t *testing.T) {
+	body := `{"reply":"ok","panels":[{"location":"L","sceneId":0,"characters":[],"event":"E","caption":"v","imagePrompt":"x"}]}`
 	env := newStoryTestEnv(t, body)
 	ch := env.newChapter(t, 1)
 
-	first, err := env.svc.GenerateStoryboard(1, ch.ID, nil, 1)
+	_, first, err := env.svc.StoryboardChat(1, ch.ID, nil)
 	if err != nil || len(first) != 1 {
-		t.Fatalf("首次生成应成功: %v (%d)", err, len(first))
+		t.Fatalf("首次应成功: %v (%d)", err, len(first))
 	}
 
-	// Second generation on the same chapter (already storyboarding) must NOT error.
-	second, err := env.svc.GenerateStoryboard(1, ch.ID, nil, 1)
+	// Second turn on the same chapter (already storyboarding) must NOT error.
+	_, second, err := env.svc.StoryboardChat(1, ch.ID, nil)
 	if err != nil {
 		t.Fatalf("重生成不应报错: %v", err)
 	}
@@ -232,12 +236,14 @@ func TestGenerateStoryboardRegenerateSucceeds(t *testing.T) {
 	}
 }
 
-// TestGenerateStoryboardFiltersForeignIDs verifies hallucinated character ids and
+// TestStoryboardChatFiltersForeignIDs verifies hallucinated character ids and
 // foreign scene ids are dropped before persistence.
-func TestGenerateStoryboardFiltersForeignIDs(t *testing.T) {
+func TestStoryboardChatFiltersForeignIDs(t *testing.T) {
 	// The model returns character id 999 (nonexistent) and scene id 888 (foreign);
 	// only the valid character id (created below) and sceneId==0 must survive.
-	body := "[{\"caption\":\"c\",\"characterIds\":[VALID,999],\"sceneId\":888,\"imagePrompt\":\"x\"}]"
+	body := `{"reply":"ok","panels":[{"location":"L","sceneId":888,` +
+		`"characters":[{"id":VALID,"expression":"笑"},{"id":999,"expression":"哭"}],` +
+		`"event":"E","caption":"c","imagePrompt":"x"}]}`
 	env := newStoryTestEnv(t, "placeholder")
 	ch, b := env.newChapterWithBook(t, 1)
 
@@ -245,12 +251,11 @@ func TestGenerateStoryboardFiltersForeignIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create character: %v", err)
 	}
-	// Rewrite the fake server body to reference the real character id.
 	env.setContent(strings.Replace(body, "VALID", strconv.FormatInt(char.ID, 10), 1))
 
-	panels, err := env.svc.GenerateStoryboard(1, ch.ID, nil, 1)
+	_, panels, err := env.svc.StoryboardChat(1, ch.ID, nil)
 	if err != nil {
-		t.Fatalf("generate: %v", err)
+		t.Fatalf("chat: %v", err)
 	}
 	if len(panels) != 1 {
 		t.Fatalf("应有1个分镜, got %d", len(panels))

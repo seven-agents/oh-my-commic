@@ -28,12 +28,14 @@ func mount(env *storyTestEnv, userID int64) http.Handler {
 	return r
 }
 
-func TestConverseHandlerOK(t *testing.T) {
-	env := newStoryTestEnv(t, "你好呀")
+const storyboardChatPath = "/storyboard-chat"
+
+func TestStoryboardChatHandlerOK(t *testing.T) {
+	env := newStoryTestEnv(t, `{"reply":"你好呀","panels":[{"location":"L","sceneId":0,"characters":[],"event":"E","caption":"a","imagePrompt":"x"}]}`)
 	ch := env.newChapter(t, 1)
 	srv := mount(env, 1)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/chapters/"+itoa(ch.ID)+"/converse",
+	req := httptest.NewRequest(http.MethodPost, "/api/chapters/"+itoa(ch.ID)+storyboardChatPath,
 		strings.NewReader(`{"messages":[{"role":"user","content":"hi"}]}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -41,21 +43,30 @@ func TestConverseHandlerOK(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("状态码 %d, body=%s", w.Code, w.Body.String())
 	}
-	var out map[string]string
+	var out struct {
+		Reply  string `json:"reply"`
+		Panels []struct {
+			Caption  string `json:"caption"`
+			Location string `json:"location"`
+		} `json:"panels"`
+	}
 	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if out["reply"] != "你好呀" {
-		t.Fatalf("reply 错: %q", out["reply"])
+	if out.Reply != "你好呀" {
+		t.Fatalf("reply 错: %q", out.Reply)
+	}
+	if len(out.Panels) != 1 || out.Panels[0].Caption != "a" || out.Panels[0].Location != "L" {
+		t.Fatalf("panels 错: %+v", out.Panels)
 	}
 }
 
-func TestConverseHandlerCrossUser404(t *testing.T) {
-	env := newStoryTestEnv(t, "hi")
+func TestStoryboardChatHandlerCrossUser404(t *testing.T) {
+	env := newStoryTestEnv(t, `{"reply":"hi","panels":[]}`)
 	ch := env.newChapter(t, 1)
 	srv := mount(env, 2) // user 2 hits user 1's chapter
 
-	req := httptest.NewRequest(http.MethodPost, "/api/chapters/"+itoa(ch.ID)+"/converse",
+	req := httptest.NewRequest(http.MethodPost, "/api/chapters/"+itoa(ch.ID)+storyboardChatPath,
 		strings.NewReader(`{"messages":[]}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -65,12 +76,12 @@ func TestConverseHandlerCrossUser404(t *testing.T) {
 	}
 }
 
-func TestConverseHandlerBadJSON400(t *testing.T) {
-	env := newStoryTestEnv(t, "hi")
+func TestStoryboardChatHandlerBadJSON400(t *testing.T) {
+	env := newStoryTestEnv(t, `{"reply":"hi","panels":[]}`)
 	ch := env.newChapter(t, 1)
 	srv := mount(env, 1)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/chapters/"+itoa(ch.ID)+"/converse",
+	req := httptest.NewRequest(http.MethodPost, "/api/chapters/"+itoa(ch.ID)+storyboardChatPath,
 		strings.NewReader(`{bad`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -80,11 +91,11 @@ func TestConverseHandlerBadJSON400(t *testing.T) {
 	}
 }
 
-func TestConverseHandlerBadID400(t *testing.T) {
-	env := newStoryTestEnv(t, "hi")
+func TestStoryboardChatHandlerBadID400(t *testing.T) {
+	env := newStoryTestEnv(t, `{"reply":"hi","panels":[]}`)
 	srv := mount(env, 1)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/chapters/0/converse",
+	req := httptest.NewRequest(http.MethodPost, "/api/chapters/0"+storyboardChatPath,
 		strings.NewReader(`{"messages":[]}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -94,29 +105,13 @@ func TestConverseHandlerBadID400(t *testing.T) {
 	}
 }
 
-func TestStoryboardHandlerOK(t *testing.T) {
-	body := "[{\"caption\":\"a\",\"characterIds\":[],\"sceneId\":0,\"imagePrompt\":\"x\"}]"
-	env := newStoryTestEnv(t, body)
+func TestStoryboardChatHandlerAIError502(t *testing.T) {
+	env := newStoryTestEnv(t, "无法生成分镜") // no JSON object -> parse error
 	ch := env.newChapter(t, 1)
 	srv := mount(env, 1)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/chapters/"+itoa(ch.ID)+"/storyboard",
-		strings.NewReader(`{"messages":[],"panelCount":1}`))
-	w := httptest.NewRecorder()
-	srv.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("状态码 %d, body=%s", w.Code, w.Body.String())
-	}
-}
-
-func TestStoryboardHandlerAIError502(t *testing.T) {
-	env := newStoryTestEnv(t, "无法生成分镜") // no JSON array -> parse error
-	ch := env.newChapter(t, 1)
-	srv := mount(env, 1)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/chapters/"+itoa(ch.ID)+"/storyboard",
-		strings.NewReader(`{"messages":[],"panelCount":1}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/chapters/"+itoa(ch.ID)+storyboardChatPath,
+		strings.NewReader(`{"messages":[]}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 

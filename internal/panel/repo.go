@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/seven-agents/oh-my-commic/internal/models"
@@ -31,7 +32,7 @@ const statusDone = "done"
 // panelColumns is the ordered column list used by every panel SELECT so the scan
 // order stays in sync with scanPanel. "order" is a SQL reserved word and is
 // always quoted.
-const panelColumns = `id, chapter_id, "order", caption, character_ids, scene_id, image_prompt, image_url, status`
+const panelColumns = `id, chapter_id, "order", caption, character_ids, scene_id, image_prompt, image_url, status, location, event, char_expressions`
 
 // Repo performs pure data operations on the panels table. It is keyed by
 // chapter_id / id and does NOT enforce ownership; that is the Service's
@@ -70,11 +71,15 @@ func (r *Repo) ReplaceForChapter(chapterID int64, panels []models.Panel) ([]mode
 		if err != nil {
 			return nil, fmt.Errorf("replace panels for chapter %d: marshal character ids: %w", chapterID, err)
 		}
+		exprs, err := marshalExpressions(p.CharExpressions)
+		if err != nil {
+			return nil, fmt.Errorf("replace panels for chapter %d: marshal expressions: %w", chapterID, err)
+		}
 		order := int64(i)
 		res, err := tx.Exec(
-			`INSERT INTO panels (chapter_id, "order", caption, character_ids, scene_id, image_prompt, image_url, status)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			chapterID, order, p.Caption, ids, p.SceneID, p.ImagePrompt, p.ImageURL, statusPending,
+			`INSERT INTO panels (chapter_id, "order", caption, character_ids, scene_id, image_prompt, image_url, status, location, event, char_expressions)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			chapterID, order, p.Caption, ids, p.SceneID, p.ImagePrompt, p.ImageURL, statusPending, p.Location, p.Event, exprs,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("replace panels for chapter %d: insert: %w", chapterID, err)
@@ -89,6 +94,7 @@ func (r *Repo) ReplaceForChapter(chapterID int64, panels []models.Panel) ([]mode
 		inserted.ChapterID = chapterID
 		inserted.Order = int(order)
 		inserted.CharacterIDs = normalizeIDs(p.CharacterIDs)
+		inserted.CharExpressions = normalizeExpressions(p.CharExpressions)
 		inserted.Status = statusPending
 		out = append(out, inserted)
 	}
@@ -143,16 +149,21 @@ func (r *Repo) Get(id int64) (models.Panel, error) {
 }
 
 // Update overwrites the editable fields of the panel with id — caption,
-// character_ids (JSON), scene_id and image_prompt — and returns the refreshed
-// row. It returns ErrNotFound if no such panel exists.
+// character_ids (JSON), scene_id, image_prompt, location, event and
+// char_expressions (JSON) — and returns the refreshed row. It returns
+// ErrNotFound if no such panel exists.
 func (r *Repo) Update(id int64, p models.Panel) (models.Panel, error) {
 	ids, err := marshalIDs(p.CharacterIDs)
 	if err != nil {
 		return models.Panel{}, fmt.Errorf("update panel %d: marshal character ids: %w", id, err)
 	}
+	exprs, err := marshalExpressions(p.CharExpressions)
+	if err != nil {
+		return models.Panel{}, fmt.Errorf("update panel %d: marshal expressions: %w", id, err)
+	}
 	res, err := r.db.Exec(
-		`UPDATE panels SET caption = ?, character_ids = ?, scene_id = ?, image_prompt = ? WHERE id = ?`,
-		p.Caption, ids, p.SceneID, p.ImagePrompt, id,
+		`UPDATE panels SET caption = ?, character_ids = ?, scene_id = ?, image_prompt = ?, location = ?, event = ?, char_expressions = ? WHERE id = ?`,
+		p.Caption, ids, p.SceneID, p.ImagePrompt, p.Location, p.Event, exprs, id,
 	)
 	if err != nil {
 		return models.Panel{}, fmt.Errorf("update panel %d: %w", id, err)
@@ -217,11 +228,13 @@ type scanner interface {
 // character_ids JSON column into a []int64.
 func scanPanel(s scanner) (models.Panel, error) {
 	var (
-		p   models.Panel
-		ids string
+		p     models.Panel
+		ids   string
+		exprs string
 	)
 	if err := s.Scan(
 		&p.ID, &p.ChapterID, &p.Order, &p.Caption, &ids, &p.SceneID, &p.ImagePrompt, &p.ImageURL, &p.Status,
+		&p.Location, &p.Event, &exprs,
 	); err != nil {
 		return models.Panel{}, err
 	}
@@ -230,6 +243,11 @@ func scanPanel(s scanner) (models.Panel, error) {
 		return models.Panel{}, fmt.Errorf("decode character ids for panel %d: %w", p.ID, err)
 	}
 	p.CharacterIDs = parsed
+	parsedExprs, err := unmarshalExpressions(exprs)
+	if err != nil {
+		return models.Panel{}, fmt.Errorf("decode expressions for panel %d: %w", p.ID, err)
+	}
+	p.CharExpressions = parsedExprs
 	return p, nil
 }
 
@@ -263,4 +281,47 @@ func normalizeIDs(ids []int64) []int64 {
 		return []int64{}
 	}
 	return ids
+}
+
+// marshalExpressions serializes the per-character expression map into a JSON
+// object TEXT. A nil map serializes to "{}" so the stored column is always valid
+// JSON.
+func marshalExpressions(exprs map[int64]string) (string, error) {
+	b, err := json.Marshal(normalizeExpressions(exprs))
+	if err != nil {
+		return "", fmt.Errorf("marshal expressions: %w", err)
+	}
+	return string(b), nil
+}
+
+// unmarshalExpressions deserializes a JSON object TEXT back into a
+// map[int64]string. An empty or whitespace-only string yields an empty map
+// rather than an error. JSON object keys are strings, so numeric character ids
+// are parsed back into int64 keys.
+func unmarshalExpressions(s string) (map[int64]string, error) {
+	out := map[int64]string{}
+	if strings.TrimSpace(s) == "" {
+		return out, nil
+	}
+	raw := map[string]string{}
+	if err := json.Unmarshal([]byte(s), &raw); err != nil {
+		return nil, fmt.Errorf("unmarshal expressions: %w", err)
+	}
+	for k, v := range raw {
+		id, err := strconv.ParseInt(k, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("unmarshal expressions: bad key %q: %w", k, err)
+		}
+		out[id] = v
+	}
+	return out, nil
+}
+
+// normalizeExpressions returns a non-nil map, converting nil to an empty map so
+// JSON serialization yields "{}" and the model never carries a nil map.
+func normalizeExpressions(exprs map[int64]string) map[int64]string {
+	if exprs == nil {
+		return map[int64]string{}
+	}
+	return exprs
 }
