@@ -111,7 +111,7 @@ func TestHandlerLogoutRevokesSession(t *testing.T) {
 }
 
 func TestSessionIssueUniqueTokens(t *testing.T) {
-	s := NewSession()
+	s := NewSession(nil)
 	seen := make(map[string]struct{})
 	for i := 0; i < 100; i++ {
 		tok := s.Issue(int64(i))

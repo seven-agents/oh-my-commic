@@ -42,7 +42,7 @@ func main() {
 	defer d.Close()
 
 	media := storage.Local{Root: cfg.DataDir}
-	sess := auth.NewSession()
+	sess := auth.NewSession(d)
 
 	authSvc := auth.NewService(auth.NewUserRepo(d), sess)
 	authHandler := auth.NewHandler(authSvc)
