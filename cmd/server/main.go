@@ -18,6 +18,7 @@ import (
 	"github.com/seven-agents/oh-my-commic/internal/db"
 	"github.com/seven-agents/oh-my-commic/internal/httpx"
 	"github.com/seven-agents/oh-my-commic/internal/panel"
+	"github.com/seven-agents/oh-my-commic/internal/render"
 	"github.com/seven-agents/oh-my-commic/internal/storage"
 	"github.com/seven-agents/oh-my-commic/internal/story"
 )
@@ -69,6 +70,14 @@ func main() {
 	storySvc := story.NewService(aiClient, assetSvc, chapterSvc, panelSvc)
 	storyHandler := story.NewHandler(storySvc)
 
+	// The render flow downloads the generated image from a remote URL; give it a
+	// generous timeout independent of the AI client's request timeout.
+	renderSvc := render.NewService(
+		aiClient, panelSvc, chapterSvc, assetSvc, media,
+		&http.Client{Timeout: 120 * time.Second},
+	)
+	renderHandler := render.NewHandler(renderSvc)
+
 	router := httpx.NewRouter(httpx.Deps{
 		Session: sess,
 		Auth:    authHandler,
@@ -77,6 +86,7 @@ func main() {
 		Chapter: chapterHandler,
 		Panel:   panelHandler,
 		Story:   storyHandler,
+		Render:  renderHandler,
 		Media:   media.Handler(),
 	})
 

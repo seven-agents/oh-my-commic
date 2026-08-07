@@ -79,6 +79,20 @@ func (s *Service) UpdatePanel(userID, panelID int64, p models.Panel) (models.Pan
 	return s.repo.Update(panelID, p)
 }
 
+// GetPanel returns the panel with panelID after loading it to resolve its owning
+// chapter and verifying userID owns that chapter. Cross-user or unknown panels
+// return ErrNotFound.
+func (s *Service) GetPanel(userID, panelID int64) (models.Panel, error) {
+	existing, err := s.repo.Get(panelID)
+	if err != nil {
+		return models.Panel{}, err
+	}
+	if err := s.ownChapter(userID, existing.ChapterID); err != nil {
+		return models.Panel{}, err
+	}
+	return existing, nil
+}
+
 // SetPanelImage stores url as panelID's image after verifying ownership of its
 // chapter. Cross-user or unknown panels return ErrNotFound.
 func (s *Service) SetPanelImage(userID, panelID int64, url string) (models.Panel, error) {
