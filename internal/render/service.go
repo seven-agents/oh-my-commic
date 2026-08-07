@@ -50,7 +50,13 @@ const statusFailed = "failed"
 
 // defaultMaxRefs caps reference images per render when NewService is given a
 // non-positive maxRefs (defensive fallback so the model is never over-fed).
-const defaultMaxRefs = 4
+const defaultMaxRefs = 3
+
+// modelMaxRefs is the hard upper bound the multi-image edit model accepts.
+// qwen-image-edit-plus rejects a request with more than 3 image items
+// ("must contain 1~3 image content items"), so we clamp to this regardless of
+// how maxRefs is configured — over-feeding causes a 400 → render failure.
+const modelMaxRefs = 3
 
 // ImageGenerator produces a remote image URL from a prompt. It is satisfied by
 // *ai.Client. The Service depends on this narrow interface (defined where it is
@@ -90,6 +96,9 @@ func NewService(
 ) *Service {
 	if maxRefs <= 0 {
 		maxRefs = defaultMaxRefs
+	}
+	if maxRefs > modelMaxRefs {
+		maxRefs = modelMaxRefs // model hard limit: never send more than 3 images
 	}
 	return &Service{
 		gen:      gen,
