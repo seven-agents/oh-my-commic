@@ -11,6 +11,7 @@ import (
 	"github.com/seven-agents/oh-my-commic/internal/book"
 	"github.com/seven-agents/oh-my-commic/internal/chapter"
 	"github.com/seven-agents/oh-my-commic/internal/panel"
+	"github.com/seven-agents/oh-my-commic/internal/render"
 	"github.com/seven-agents/oh-my-commic/internal/story"
 )
 
@@ -37,6 +38,9 @@ type Deps struct {
 	// Story mounts the per-chapter AI storyboard routes (converse + generate,
 	// behind RequireUser). Optional: nil disables story routes.
 	Story *story.Handler
+	// Render mounts the per-panel AI image render route (behind RequireUser).
+	// Optional: nil disables the render route.
+	Render *render.Handler
 	// Media serves stored assets under /media/*.
 	Media http.Handler
 }
@@ -73,6 +77,9 @@ func NewRouter(deps Deps) http.Handler {
 		}
 		if deps.Story != nil {
 			deps.Story.Mount(pr)
+		}
+		if deps.Render != nil {
+			deps.Render.Mount(pr)
 		}
 	})
 
