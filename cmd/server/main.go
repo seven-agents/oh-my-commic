@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/seven-agents/oh-my-commic/internal/asset"
 	"github.com/seven-agents/oh-my-commic/internal/auth"
 	"github.com/seven-agents/oh-my-commic/internal/book"
 	"github.com/seven-agents/oh-my-commic/internal/config"
@@ -39,13 +40,18 @@ func main() {
 	authSvc := auth.NewService(auth.NewUserRepo(d), sess)
 	authHandler := auth.NewHandler(authSvc)
 
-	bookSvc := book.NewService(book.NewRepo(d))
+	bookRepo := book.NewRepo(d)
+	bookSvc := book.NewService(bookRepo)
 	bookHandler := book.NewHandler(bookSvc)
+
+	assetSvc := asset.NewService(asset.NewRepo(d), bookRepo)
+	assetHandler := asset.NewHandler(assetSvc, media)
 
 	router := httpx.NewRouter(httpx.Deps{
 		Session: sess,
 		Auth:    authHandler,
 		Book:    bookHandler,
+		Asset:   assetHandler,
 		Media:   media.Handler(),
 	})
 

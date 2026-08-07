@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/seven-agents/oh-my-commic/internal/asset"
 	"github.com/seven-agents/oh-my-commic/internal/auth"
 	"github.com/seven-agents/oh-my-commic/internal/book"
 )
@@ -21,6 +22,9 @@ type Deps struct {
 	Auth *auth.Handler
 	// Book mounts the per-user book routes (behind RequireUser).
 	Book *book.Handler
+	// Asset mounts the per-book asset routes (upload + character/scene CRUD,
+	// behind RequireUser). Optional: nil disables asset routes.
+	Asset *asset.Handler
 	// Media serves stored assets under /media/*.
 	Media http.Handler
 }
@@ -46,6 +50,9 @@ func NewRouter(deps Deps) http.Handler {
 	r.Group(func(pr chi.Router) {
 		pr.Use(auth.RequireUser(deps.Session))
 		deps.Book.Mount(pr)
+		if deps.Asset != nil {
+			deps.Asset.Mount(pr)
+		}
 	})
 
 	if deps.Media != nil {

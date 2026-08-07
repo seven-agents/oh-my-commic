@@ -42,6 +42,14 @@ func (s *Service) ownBook(userID, bookID int64) error {
 	return nil
 }
 
+// VerifyBook returns nil if userID owns bookID, or ErrNotFound if the book does
+// not exist or belongs to another user. It exposes the ownBook gate so callers
+// (such as the upload handler) can confirm write access to a book before storing
+// files under it.
+func (s *Service) VerifyBook(userID, bookID int64) error {
+	return s.ownBook(userID, bookID)
+}
+
 // CreateCharacter creates a character under bookID after verifying userID owns
 // the book. The character's BookID is forced to bookID regardless of the input.
 func (s *Service) CreateCharacter(userID, bookID int64, c models.Character) (models.Character, error) {
