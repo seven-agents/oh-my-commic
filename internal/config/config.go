@@ -14,6 +14,7 @@ type Config struct {
 	DashScopeKey string
 	TextModel    string
 	ImageModel   string
+	EditModel    string
 	TextBaseURL  string
 	ImageBaseURL string
 }
@@ -36,6 +37,7 @@ func Load() (Config, error) {
 		DashScopeKey: os.Getenv("DASHSCOPE_API_KEY"),
 		TextModel:    get("QWEN_TEXT_MODEL", "qwen-plus"),
 		ImageModel:   get("QWEN_IMAGE_MODEL", "wan2.2-t2i-plus"),
+		EditModel:    get("QWEN_EDIT_MODEL", "qwen-image-edit"),
 		TextBaseURL:  get("QWEN_TEXT_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
 		ImageBaseURL: get("QWEN_IMAGE_BASE_URL", "https://dashscope.aliyuncs.com/api/v1"),
 	}

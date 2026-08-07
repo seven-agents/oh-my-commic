@@ -92,6 +92,44 @@ func (s Local) SaveBytes(bookID int64, ext string, b []byte) (string, error) {
 	return relURL, nil
 }
 
+// ReadByURL resolves a media URL of the form /media/{bookId}/{file} to a file
+// under Root and returns its bytes plus lower-cased extension (with dot).
+//
+// It is path-traversal safe: the URL is percent-independent (callers pass the
+// server-generated relURL), cleaned, and any residual ".." or absolute escape is
+// rejected. The resolved path is additionally verified to remain within Root.
+func (s Local) ReadByURL(relURL string) (data []byte, ext string, err error) {
+	if !strings.HasPrefix(relURL, mediaPrefix) {
+		return nil, "", fmt.Errorf("storage: 非法媒体地址")
+	}
+	rel := strings.TrimPrefix(relURL, mediaPrefix)
+	// path.Clean collapses any "." / ".." segments; reject anything that still
+	// escapes (leading ".." or absolute) so we never read outside Root.
+	clean := path.Clean("/" + rel)
+	if strings.Contains(rel, "..") || clean == "/" {
+		return nil, "", fmt.Errorf("storage: 非法媒体地址")
+	}
+
+	full := filepath.Join(s.Root, filepath.FromSlash(strings.TrimPrefix(clean, "/")))
+	rootAbs, err := filepath.Abs(s.Root)
+	if err != nil {
+		return nil, "", fmt.Errorf("storage: 解析根目录失败: %w", err)
+	}
+	fullAbs, err := filepath.Abs(full)
+	if err != nil {
+		return nil, "", fmt.Errorf("storage: 解析路径失败: %w", err)
+	}
+	if fullAbs != rootAbs && !strings.HasPrefix(fullAbs, rootAbs+string(filepath.Separator)) {
+		return nil, "", fmt.Errorf("storage: 非法媒体地址")
+	}
+
+	b, err := os.ReadFile(fullAbs)
+	if err != nil {
+		return nil, "", fmt.Errorf("storage: 读取媒体文件失败: %w", err)
+	}
+	return b, strings.ToLower(filepath.Ext(fullAbs)), nil
+}
+
 // Save reads all of r and delegates to SaveBytes.
 func (s Local) Save(bookID int64, ext string, r io.Reader) (string, error) {
 	if r == nil {

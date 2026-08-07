@@ -14,6 +14,7 @@ import (
 	"github.com/seven-agents/oh-my-commic/internal/auth"
 	"github.com/seven-agents/oh-my-commic/internal/book"
 	"github.com/seven-agents/oh-my-commic/internal/chapter"
+	"github.com/seven-agents/oh-my-commic/internal/comicify"
 	"github.com/seven-agents/oh-my-commic/internal/config"
 	"github.com/seven-agents/oh-my-commic/internal/db"
 	"github.com/seven-agents/oh-my-commic/internal/httpx"
@@ -50,8 +51,22 @@ func main() {
 	bookSvc := book.NewService(bookRepo)
 	bookHandler := book.NewHandler(bookSvc)
 
+	aiClient := &ai.Client{
+		Key:          cfg.DashScopeKey,
+		TextBaseURL:  cfg.TextBaseURL,
+		ImageBaseURL: cfg.ImageBaseURL,
+		TextModel:    cfg.TextModel,
+		ImageModel:   cfg.ImageModel,
+		EditModel:    cfg.EditModel,
+		HTTP:         &http.Client{Timeout: 60 * time.Second},
+	}
+
+	// Comic-ification downloads the produced image from a remote URL and can take
+	// 15-30s per asset; give it a generous, independent timeout.
+	comicSvc := comicify.NewService(aiClient, media, &http.Client{Timeout: 120 * time.Second})
+
 	assetSvc := asset.NewService(asset.NewRepo(d), bookRepo)
-	assetHandler := asset.NewHandler(assetSvc, media)
+	assetHandler := asset.NewHandler(assetSvc, media, comicSvc)
 
 	chapterSvc := chapter.NewService(chapter.NewRepo(d), bookRepo)
 	chapterHandler := chapter.NewHandler(chapterSvc)
@@ -59,14 +74,6 @@ func main() {
 	panelSvc := panel.NewService(panel.NewRepo(d), chapterSvc)
 	panelHandler := panel.NewHandler(panelSvc)
 
-	aiClient := &ai.Client{
-		Key:          cfg.DashScopeKey,
-		TextBaseURL:  cfg.TextBaseURL,
-		ImageBaseURL: cfg.ImageBaseURL,
-		TextModel:    cfg.TextModel,
-		ImageModel:   cfg.ImageModel,
-		HTTP:         &http.Client{Timeout: 60 * time.Second},
-	}
 	storySvc := story.NewService(aiClient, assetSvc, chapterSvc, panelSvc)
 	storyHandler := story.NewHandler(storySvc)
 

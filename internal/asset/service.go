@@ -69,6 +69,20 @@ func (s *Service) ListCharacters(userID, bookID int64) ([]models.Character, erro
 	return s.repo.ListCharacters(bookID)
 }
 
+// GetCharacter returns the character with characterID after verifying its owning
+// book belongs to userID. Cross-user or unknown access returns ErrNotFound. It
+// lets callers compare the stored image before deciding to re-comic-ify.
+func (s *Service) GetCharacter(userID, characterID int64) (models.Character, error) {
+	existing, err := s.repo.GetCharacter(characterID)
+	if err != nil {
+		return models.Character{}, err
+	}
+	if err := s.ownBook(userID, existing.BookID); err != nil {
+		return models.Character{}, err
+	}
+	return existing, nil
+}
+
 // UpdateCharacter updates the character with characterID after re-checking that
 // its owning book belongs to userID. Cross-user access returns ErrNotFound.
 func (s *Service) UpdateCharacter(userID, characterID int64, c models.Character) (models.Character, error) {
@@ -112,6 +126,20 @@ func (s *Service) ListScenes(userID, bookID int64) ([]models.Scene, error) {
 		return nil, err
 	}
 	return s.repo.ListScenes(bookID)
+}
+
+// GetScene returns the scene with sceneID after verifying its owning book
+// belongs to userID. Cross-user or unknown access returns ErrNotFound. It lets
+// callers compare the stored image before deciding to re-comic-ify.
+func (s *Service) GetScene(userID, sceneID int64) (models.Scene, error) {
+	existing, err := s.repo.GetScene(sceneID)
+	if err != nil {
+		return models.Scene{}, err
+	}
+	if err := s.ownBook(userID, existing.BookID); err != nil {
+		return models.Scene{}, err
+	}
+	return existing, nil
 }
 
 // UpdateScene updates the scene with sceneID after re-checking that its owning

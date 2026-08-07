@@ -3,16 +3,23 @@ package asset
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/seven-agents/oh-my-commic/internal/auth"
+	"github.com/seven-agents/oh-my-commic/internal/comicify"
 	"github.com/seven-agents/oh-my-commic/internal/models"
 	"github.com/seven-agents/oh-my-commic/internal/storage"
 )
+
+// mediaPrefix is the URL prefix of a locally stored upload. Only such URLs are
+// candidates for comic-ification; an empty or external URL is persisted as-is.
+const mediaPrefix = "/media/"
 
 // maxUploadBytes caps the size of an uploaded asset (5 MiB). The limit is
 // enforced both on the request body (MaxBytesReader) and the multipart parser.
@@ -37,11 +44,28 @@ var contentTypeExt = map[string]string{
 type Handler struct {
 	svc   *Service
 	store storage.Local
+	comic *comicify.Service
 }
 
-// NewHandler returns a Handler backed by svc and store.
-func NewHandler(svc *Service, store storage.Local) *Handler {
-	return &Handler{svc: svc, store: store}
+// NewHandler returns a Handler backed by svc, store, and the comicify service
+// used to redraw a freshly uploaded asset image into its locked stylized form
+// before the asset is persisted.
+func NewHandler(svc *Service, store storage.Local, comic *comicify.Service) *Handler {
+	return &Handler{svc: svc, store: store, comic: comic}
+}
+
+// isLocalUpload reports whether url points at a locally stored upload (and is
+// therefore a candidate for comic-ification).
+func isLocalUpload(url string) bool {
+	return strings.HasPrefix(url, mediaPrefix)
+}
+
+// belongsToBook reports whether a local media url lives under the given book's
+// directory (/media/{bookID}/...). It ties a client-supplied source image to the
+// caller's own, ownership-checked book so a user cannot point comicify at another
+// user's upload (/media/{otherBookID}/...) and launder it into their book.
+func belongsToBook(url string, bookID int64) bool {
+	return strings.HasPrefix(url, fmt.Sprintf("%s%d/", mediaPrefix, bookID))
 }
 
 // Mount registers the asset endpoints onto r using their absolute paths.
@@ -159,6 +183,29 @@ func (h *Handler) CreateCharacter(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &c) {
 		return
 	}
+
+	// A freshly uploaded local image is comic-ified into its locked stylized
+	// form before persistence; an empty or external URL is kept as-is.
+	if isLocalUpload(c.ImageURL) {
+		// The source image must live under THIS book (server-resolved bookID),
+		// never another user's /media/{otherBook}/... upload.
+		if !belongsToBook(c.ImageURL, bookID) {
+			writeError(w, http.StatusBadRequest, "图片不合法")
+			return
+		}
+		// Fail fast (404) on an unowned book before spending an API call.
+		if err := h.svc.VerifyBook(userID, bookID); err != nil {
+			writeAssetError(w, err, "创建角色失败")
+			return
+		}
+		stylized, err := h.comic.Character(r.Context(), bookID, c, c.ImageURL)
+		if err != nil {
+			writeComicifyError(w)
+			return
+		}
+		c.ImageURL = stylized
+	}
+
 	created, err := h.svc.CreateCharacter(userID, bookID, c)
 	if err != nil {
 		writeAssetError(w, err, "创建角色失败")
@@ -178,6 +225,28 @@ func (h *Handler) UpdateCharacter(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &c) {
 		return
 	}
+
+	// Load the stored asset so we can (a) resolve the owning book for comicify
+	// and (b) compare images: only a NEW local upload triggers re-comic-ification.
+	existing, err := h.svc.GetCharacter(userID, id)
+	if err != nil {
+		writeAssetError(w, err, "更新角色失败")
+		return
+	}
+	if isLocalUpload(c.ImageURL) && c.ImageURL != existing.ImageURL {
+		// A changed local image must live under the asset's own book.
+		if !belongsToBook(c.ImageURL, existing.BookID) {
+			writeError(w, http.StatusBadRequest, "图片不合法")
+			return
+		}
+		stylized, err := h.comic.Character(r.Context(), existing.BookID, c, c.ImageURL)
+		if err != nil {
+			writeComicifyError(w)
+			return
+		}
+		c.ImageURL = stylized
+	}
+
 	updated, err := h.svc.UpdateCharacter(userID, id, c)
 	if err != nil {
 		writeAssetError(w, err, "更新角色失败")
@@ -226,6 +295,24 @@ func (h *Handler) CreateScene(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &sc) {
 		return
 	}
+
+	if isLocalUpload(sc.ImageURL) {
+		if !belongsToBook(sc.ImageURL, bookID) {
+			writeError(w, http.StatusBadRequest, "图片不合法")
+			return
+		}
+		if err := h.svc.VerifyBook(userID, bookID); err != nil {
+			writeAssetError(w, err, "创建场景失败")
+			return
+		}
+		stylized, err := h.comic.Scene(r.Context(), bookID, sc, sc.ImageURL)
+		if err != nil {
+			writeComicifyError(w)
+			return
+		}
+		sc.ImageURL = stylized
+	}
+
 	created, err := h.svc.CreateScene(userID, bookID, sc)
 	if err != nil {
 		writeAssetError(w, err, "创建场景失败")
@@ -245,6 +332,25 @@ func (h *Handler) UpdateScene(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSON(w, r, &sc) {
 		return
 	}
+
+	existing, err := h.svc.GetScene(userID, id)
+	if err != nil {
+		writeAssetError(w, err, "更新场景失败")
+		return
+	}
+	if isLocalUpload(sc.ImageURL) && sc.ImageURL != existing.ImageURL {
+		if !belongsToBook(sc.ImageURL, existing.BookID) {
+			writeError(w, http.StatusBadRequest, "图片不合法")
+			return
+		}
+		stylized, err := h.comic.Scene(r.Context(), existing.BookID, sc, sc.ImageURL)
+		if err != nil {
+			writeComicifyError(w)
+			return
+		}
+		sc.ImageURL = stylized
+	}
+
 	updated, err := h.svc.UpdateScene(userID, id, sc)
 	if err != nil {
 		writeAssetError(w, err, "更新场景失败")
@@ -310,6 +416,12 @@ func writeAssetError(w http.ResponseWriter, err error, fallback string) {
 		return
 	}
 	writeError(w, http.StatusInternalServerError, fallback)
+}
+
+// writeComicifyError responds when the AI comic-ification step fails. It returns
+// 502 with a friendly Chinese message and never leaks upstream/API detail.
+func writeComicifyError(w http.ResponseWriter) {
+	writeError(w, http.StatusBadGateway, "画失败了，再试一次吧")
 }
 
 // writeJSON encodes v as a JSON response with the given status code.

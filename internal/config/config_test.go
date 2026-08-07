@@ -31,6 +31,7 @@ func TestLoadOverridesAndDefaults(t *testing.T) {
 	os.Setenv("PORT", "9090")
 	defer os.Unsetenv("PORT")
 	os.Unsetenv("QWEN_IMAGE_MODEL")
+	os.Unsetenv("QWEN_EDIT_MODEL")
 
 	c, err := Load()
 	if err != nil {
@@ -47,6 +48,9 @@ func TestLoadOverridesAndDefaults(t *testing.T) {
 	}
 	if c.ImageModel != "wan2.2-t2i-plus" {
 		t.Fatalf("default ImageModel wrong: %s", c.ImageModel)
+	}
+	if c.EditModel != "qwen-image-edit" {
+		t.Fatalf("default EditModel wrong: %s", c.EditModel)
 	}
 	if c.TextBaseURL != "https://dashscope.aliyuncs.com/compatible-mode/v1" {
 		t.Fatalf("default TextBaseURL wrong: %s", c.TextBaseURL)

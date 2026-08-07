@@ -2,8 +2,10 @@ package asset
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -15,10 +17,27 @@ import (
 
 	"github.com/seven-agents/oh-my-commic/internal/auth"
 	"github.com/seven-agents/oh-my-commic/internal/book"
+	"github.com/seven-agents/oh-my-commic/internal/comicify"
 	"github.com/seven-agents/oh-my-commic/internal/db"
 	"github.com/seven-agents/oh-my-commic/internal/models"
 	"github.com/seven-agents/oh-my-commic/internal/storage"
 )
+
+// stubEditor is an ImageEditor that returns a URL to an in-test image server (so
+// the comicify download step succeeds), or an error to exercise the 502 path.
+type stubEditor struct {
+	remoteURL string
+	err       error
+	calls     int
+}
+
+func (s *stubEditor) EditImage(_ context.Context, _ string, _ []string) (string, error) {
+	s.calls++
+	if s.err != nil {
+		return "", s.err
+	}
+	return s.remoteURL, nil
+}
 
 // tinyPNG is a minimal valid 1x1 PNG. Its leading bytes make
 // http.DetectContentType return "image/png".
@@ -34,11 +53,16 @@ var tinyPNG = []byte{
 type handlerTestEnv struct {
 	handler *Handler
 	books   *book.Repo
+	store   storage.Local
+	editor  *stubEditor
+	imgSrv  *httptest.Server
 	router  chi.Router
 }
 
 // newHandlerTestEnv opens an in-memory DB, seeds two users, and wires a full
-// asset Handler (service + local storage rooted at a temp dir) onto a chi router.
+// asset Handler (service + local storage + comicify with a stub editor) onto a
+// chi router. The stub editor returns a URL served by an in-test PNG server, so
+// the comic-ification download+store step runs without any real network calls.
 func newHandlerTestEnv(t *testing.T) *handlerTestEnv {
 	t.Helper()
 
@@ -49,14 +73,33 @@ func newHandlerTestEnv(t *testing.T) *handlerTestEnv {
 	t.Cleanup(func() { d.Close() })
 	seedHandlerUsers(t, d, 2)
 
+	imgSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(tinyPNG)
+	}))
+	t.Cleanup(imgSrv.Close)
+
 	books := book.NewRepo(d)
 	svc := NewService(NewRepo(d), books)
 	store := storage.Local{Root: t.TempDir()}
-	h := NewHandler(svc, store)
+	editor := &stubEditor{remoteURL: imgSrv.URL + "/styled.png"}
+	comic := comicify.NewService(editor, store, imgSrv.Client())
+	h := NewHandler(svc, store, comic)
 
 	r := chi.NewRouter()
 	h.Mount(r)
-	return &handlerTestEnv{handler: h, books: books, router: r}
+	return &handlerTestEnv{handler: h, books: books, store: store, editor: editor, imgSrv: imgSrv, router: r}
+}
+
+// seedUpload writes a stored upload under bookID and returns its /media URL, as
+// if the client had just uploaded a reference image.
+func (e *handlerTestEnv) seedUpload(t *testing.T, bookID int64) string {
+	t.Helper()
+	url, err := e.store.SaveBytes(bookID, ".png", tinyPNG)
+	if err != nil {
+		t.Fatalf("seed upload: %v", err)
+	}
+	return url
 }
 
 // seedHandlerUsers inserts n users to satisfy the books.user_id foreign key.
@@ -378,6 +421,166 @@ func TestInvalidAssetID400(t *testing.T) {
 	rec := env.serveAs(t, httptest.NewRequest(http.MethodDelete, url, nil), 1)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("非法资产 ID 应为 400, got %d", rec.Code)
+	}
+}
+
+func TestCreateCharacterComicifiesUpload(t *testing.T) {
+	env := newHandlerTestEnv(t)
+	b, _ := env.books.Create(1, "书", "ghibli", "")
+	base := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
+	upload := env.seedUpload(t, b.ID)
+
+	body := `{"name":"狐狸","type":"character","imageUrl":"` + upload + `"}`
+	rec := env.serveAs(t, httptest.NewRequest(http.MethodPost, base, strings.NewReader(body)), 1)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("创建角色应为 201, got %d: %s", rec.Code, rec.Body)
+	}
+	var created models.Character
+	_ = json.Unmarshal(rec.Body.Bytes(), &created)
+	if env.editor.calls != 1 {
+		t.Fatalf("comicify should run once, ran %d", env.editor.calls)
+	}
+	if created.ImageURL == upload || !strings.HasPrefix(created.ImageURL, "/media/") {
+		t.Fatalf("imageUrl should be replaced by stylized media url, got %q", created.ImageURL)
+	}
+}
+
+func TestCreateCharacterSkipsComicifyWhenNoImage(t *testing.T) {
+	env := newHandlerTestEnv(t)
+	b, _ := env.books.Create(1, "书", "ghibli", "")
+	base := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
+
+	rec := env.serveAs(t, httptest.NewRequest(http.MethodPost, base,
+		strings.NewReader(`{"name":"狐狸","type":"character"}`)), 1)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("创建角色应为 201, got %d: %s", rec.Code, rec.Body)
+	}
+	if env.editor.calls != 0 {
+		t.Fatalf("comicify should be skipped without image, ran %d", env.editor.calls)
+	}
+}
+
+func TestCreateCharacterComicifyErrorIs502(t *testing.T) {
+	env := newHandlerTestEnv(t)
+	env.editor.err = errors.New("upstream boom")
+	b, _ := env.books.Create(1, "书", "ghibli", "")
+	base := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
+	upload := env.seedUpload(t, b.ID)
+
+	body := `{"name":"狐狸","type":"character","imageUrl":"` + upload + `"}`
+	rec := env.serveAs(t, httptest.NewRequest(http.MethodPost, base, strings.NewReader(body)), 1)
+	if rec.Code != http.StatusBadGateway {
+		t.Fatalf("comicify 失败应为 502, got %d: %s", rec.Code, rec.Body)
+	}
+	if strings.Contains(rec.Body.String(), "boom") {
+		t.Fatalf("error leaked upstream detail: %s", rec.Body)
+	}
+}
+
+func TestUpdateCharacterComicifiesOnlyNewUpload(t *testing.T) {
+	env := newHandlerTestEnv(t)
+	b, _ := env.books.Create(1, "书", "ghibli", "")
+	base := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
+
+	// Create with an initial upload → 1 comicify call, stored stylized url.
+	upload1 := env.seedUpload(t, b.ID)
+	rec := env.serveAs(t, httptest.NewRequest(http.MethodPost, base,
+		strings.NewReader(`{"name":"狐狸","type":"character","imageUrl":"`+upload1+`"}`)), 1)
+	var created models.Character
+	_ = json.Unmarshal(rec.Body.Bytes(), &created)
+	if env.editor.calls != 1 {
+		t.Fatalf("create should comicify once, ran %d", env.editor.calls)
+	}
+	stylized := created.ImageURL
+	item := base + "/" + strconv.FormatInt(created.ID, 10)
+
+	// Update text only, keeping the stored stylized image → NO new comicify.
+	rec = env.serveAs(t, httptest.NewRequest(http.MethodPut, item,
+		strings.NewReader(`{"name":"狐狸2","type":"character","imageUrl":"`+stylized+`"}`)), 1)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("更新应为 200, got %d: %s", rec.Code, rec.Body)
+	}
+	if env.editor.calls != 1 {
+		t.Fatalf("unchanged image must not re-comicify, calls=%d", env.editor.calls)
+	}
+
+	// Update with a NEW upload → comicify runs again.
+	upload2 := env.seedUpload(t, b.ID)
+	rec = env.serveAs(t, httptest.NewRequest(http.MethodPut, item,
+		strings.NewReader(`{"name":"狐狸2","type":"character","imageUrl":"`+upload2+`"}`)), 1)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("更新(新图)应为 200, got %d: %s", rec.Code, rec.Body)
+	}
+	if env.editor.calls != 2 {
+		t.Fatalf("new upload must re-comicify, calls=%d", env.editor.calls)
+	}
+	var updated models.Character
+	_ = json.Unmarshal(rec.Body.Bytes(), &updated)
+	if updated.ImageURL == upload2 {
+		t.Fatalf("new upload should be replaced by stylized url, got raw upload")
+	}
+}
+
+func TestCreateCharacterRejectsForeignBookImage(t *testing.T) {
+	env := newHandlerTestEnv(t)
+	mine, _ := env.books.Create(1, "我的书", "ghibli", "")
+	other, _ := env.books.Create(2, "别人的书", "ghibli", "")
+	// A raw upload physically stored under the OTHER user's book.
+	foreignUpload := env.seedUpload(t, other.ID)
+
+	base := "/api/books/" + strconv.FormatInt(mine.ID, 10) + "/characters"
+	body := `{"name":"狐狸","type":"character","imageUrl":"` + foreignUpload + `"}`
+	rec := env.serveAs(t, httptest.NewRequest(http.MethodPost, base, strings.NewReader(body)), 1)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("跨书图片应为 400, got %d: %s", rec.Code, rec.Body)
+	}
+	if env.editor.calls != 0 {
+		t.Fatalf("comicify must NOT run for foreign image, ran %d", env.editor.calls)
+	}
+}
+
+func TestUpdateCharacterRejectsForeignBookImage(t *testing.T) {
+	env := newHandlerTestEnv(t)
+	mine, _ := env.books.Create(1, "我的书", "ghibli", "")
+	other, _ := env.books.Create(2, "别人的书", "ghibli", "")
+	base := "/api/books/" + strconv.FormatInt(mine.ID, 10) + "/characters"
+
+	// Create a plain character (no image) owned by user 1.
+	rec := env.serveAs(t, httptest.NewRequest(http.MethodPost, base,
+		strings.NewReader(`{"name":"狐狸","type":"character"}`)), 1)
+	var created models.Character
+	_ = json.Unmarshal(rec.Body.Bytes(), &created)
+	item := base + "/" + strconv.FormatInt(created.ID, 10)
+
+	foreignUpload := env.seedUpload(t, other.ID)
+	rec = env.serveAs(t, httptest.NewRequest(http.MethodPut, item,
+		strings.NewReader(`{"name":"狐狸","type":"character","imageUrl":"`+foreignUpload+`"}`)), 1)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("更新跨书图片应为 400, got %d: %s", rec.Code, rec.Body)
+	}
+	if env.editor.calls != 0 {
+		t.Fatalf("comicify must NOT run for foreign image, ran %d", env.editor.calls)
+	}
+}
+
+func TestCreateSceneComicifiesUpload(t *testing.T) {
+	env := newHandlerTestEnv(t)
+	b, _ := env.books.Create(1, "书", "ghibli", "")
+	base := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/scenes"
+	upload := env.seedUpload(t, b.ID)
+
+	body := `{"name":"森林","imageUrl":"` + upload + `"}`
+	rec := env.serveAs(t, httptest.NewRequest(http.MethodPost, base, strings.NewReader(body)), 1)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("创建场景应为 201, got %d: %s", rec.Code, rec.Body)
+	}
+	var created models.Scene
+	_ = json.Unmarshal(rec.Body.Bytes(), &created)
+	if env.editor.calls != 1 {
+		t.Fatalf("scene comicify should run once, ran %d", env.editor.calls)
+	}
+	if created.ImageURL == upload || !strings.HasPrefix(created.ImageURL, "/media/") {
+		t.Fatalf("scene imageUrl should be replaced, got %q", created.ImageURL)
 	}
 }
 
