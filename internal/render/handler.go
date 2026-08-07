@@ -3,6 +3,7 @@ package render
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 
@@ -45,6 +46,9 @@ func (h *Handler) Render(w http.ResponseWriter, r *http.Request) {
 
 	updated, err := h.svc.RenderPanel(r.Context(), userID, panelID)
 	if err != nil {
+		// Log the real cause server-side (never leaked to the client). The
+		// wrapped error carries upstream status/body but not the API key.
+		log.Printf("render panel %d failed: %v", panelID, err)
 		writeRenderError(w, err)
 		return
 	}

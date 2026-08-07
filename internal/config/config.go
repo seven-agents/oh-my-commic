@@ -26,7 +26,9 @@ type Config struct {
 }
 
 // defaultRenderMaxRefs is the fallback cap on reference images per render.
-const defaultRenderMaxRefs = 4
+// The multi-image edit model (qwen-image-edit-plus) accepts at most 3 image
+// items per request, so the default must not exceed 3.
+const defaultRenderMaxRefs = 3
 
 // getInt returns the integer value of env var k, or def when unset/empty or not
 // a positive integer (a safe fallback so a bad env value never breaks startup).

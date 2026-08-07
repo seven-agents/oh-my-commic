@@ -57,7 +57,7 @@ func TestLoadOverridesAndDefaults(t *testing.T) {
 	if c.RenderModel != "qwen-image-edit-plus" {
 		t.Fatalf("default RenderModel wrong: %s", c.RenderModel)
 	}
-	if c.RenderMaxRefs != 4 {
+	if c.RenderMaxRefs != 3 {
 		t.Fatalf("default RenderMaxRefs wrong: %d", c.RenderMaxRefs)
 	}
 	if c.TextBaseURL != "https://dashscope.aliyuncs.com/compatible-mode/v1" {
@@ -88,8 +88,8 @@ func TestLoadRenderMaxRefs(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if c.RenderMaxRefs != 4 {
-			t.Fatalf("RenderMaxRefs for %q should fall back to 4, got %d", bad, c.RenderMaxRefs)
+		if c.RenderMaxRefs != 3 {
+			t.Fatalf("RenderMaxRefs for %q should fall back to 3, got %d", bad, c.RenderMaxRefs)
 		}
 	}
 	os.Unsetenv("QWEN_RENDER_MAX_REFS")
