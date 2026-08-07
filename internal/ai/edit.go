@@ -56,8 +56,9 @@ type editResponse struct {
 	} `json:"output"`
 }
 
-// EditImage redraws the reference image(s) using the qwen-image-edit model and
-// returns the URL of the generated (stylized) image. The call is synchronous.
+// EditImage redraws the reference image(s) using the qwen-image-edit model
+// (c.EditModel) and returns the URL of the generated (stylized) image. The call
+// is synchronous. Used by the comic-ification flow.
 //
 // refImageDataURIs are sent verbatim as the image content parts (typically
 // data:{mime};base64,... URIs because the local upload is not reachable by
@@ -65,6 +66,27 @@ type editResponse struct {
 //
 // It never logs or embeds the API key in errors and respects ctx cancellation.
 func (c *Client) EditImage(ctx context.Context, prompt string, refImageDataURIs []string) (string, error) {
+	return c.multimodalEdit(ctx, c.EditModel, prompt, refImageDataURIs)
+}
+
+// RenderWithRefs renders a panel from prompt plus one or more reference images
+// (matched characters and scene) using the multi-image edit model
+// (c.RenderModel, e.g. qwen-image-edit-plus). Behaves like EditImage but on the
+// render model, so panel consistency is driven by the actual locked reference
+// images rather than text alone.
+//
+// refImageDataURIs must contain at least one image; the edit endpoint requires
+// an input image (the caller falls back to text2image when there are none).
+func (c *Client) RenderWithRefs(ctx context.Context, prompt string, refImageDataURIs []string) (string, error) {
+	return c.multimodalEdit(ctx, c.RenderModel, prompt, refImageDataURIs)
+}
+
+// multimodalEdit performs the synchronous multimodal-generation (image-edit)
+// request against the given model with the supplied reference image data URIs
+// and a trailing text prompt, returning the produced image URL.
+//
+// It never logs or embeds the API key in errors and respects ctx cancellation.
+func (c *Client) multimodalEdit(ctx context.Context, model, prompt string, refImageDataURIs []string) (string, error) {
 	content := make([]editContentPart, 0, len(refImageDataURIs)+1)
 	for _, uri := range refImageDataURIs {
 		content = append(content, editContentPart{Image: uri})
@@ -72,7 +94,7 @@ func (c *Client) EditImage(ctx context.Context, prompt string, refImageDataURIs 
 	content = append(content, editContentPart{Text: prompt})
 
 	payload, err := json.Marshal(editRequest{
-		Model:      c.EditModel,
+		Model:      model,
 		Input:      editInput{Messages: []editMessage{{Role: "user", Content: content}}},
 		Parameters: editParameters{N: 1, Watermark: false},
 	})

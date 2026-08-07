@@ -1,4 +1,6 @@
-package comicify
+// Package imageutil provides small, dependency-light helpers for preparing
+// image bytes before they are sent to an image model as a reference.
+package imageutil
 
 import (
 	"bytes"
@@ -14,18 +16,17 @@ import (
 	_ "golang.org/x/image/webp"
 )
 
-// maxRefDimension caps the larger side of the reference image sent to the
-// editor. A full-resolution upload (1024px+) makes the qwen-image-edit request
-// slow enough to exceed the edit-client timeout; downscaling the *input*
-// reference keeps the round-trip fast while leaving the model output at full
-// resolution.
+// maxRefDimension caps the larger side of the reference image sent to an
+// image-edit model. A full-resolution upload (1024px+) makes the request slow
+// enough to exceed the edit-client timeout; downscaling the *input* reference
+// keeps the round-trip fast while leaving the model output at full resolution.
 const maxRefDimension = 768
 
 // jpegQuality is used when re-encoding a downscaled reference. JPEG is fine for
 // a throwaway reference image and keeps the base64 payload small.
 const jpegQuality = 85
 
-// resizeReference decodes raw and, if its larger dimension exceeds
+// ResizeForReference decodes raw and, if its larger dimension exceeds
 // maxRefDimension, downscales it (preserving aspect ratio, high-quality
 // CatmullRom) and re-encodes it as JPEG. It returns the (possibly new) bytes
 // and the MIME type to advertise in the data URI.
@@ -33,7 +34,7 @@ const jpegQuality = 85
 // It never fails the caller: if raw cannot be decoded (unknown format, corrupt
 // data) or re-encoding hiccups, it falls back to the original bytes and the
 // caller-provided origMime.
-func resizeReference(raw []byte, origMime string) (out []byte, mime string) {
+func ResizeForReference(raw []byte, origMime string) (out []byte, mime string) {
 	src, _, err := image.Decode(bytes.NewReader(raw))
 	if err != nil {
 		return raw, origMime
@@ -76,4 +77,19 @@ func scaledDimensions(w, h, cap int) (int, int) {
 		nw = 1
 	}
 	return nw, cap
+}
+
+// MimeFromExt maps a stored file extension (with leading dot, any case) to its
+// image MIME type, defaulting to image/png for anything unrecognized.
+func MimeFromExt(ext string) string {
+	switch ext {
+	case ".jpg", ".jpeg", ".JPG", ".JPEG":
+		return "image/jpeg"
+	case ".webp", ".WEBP":
+		return "image/webp"
+	case ".png", ".PNG":
+		return "image/png"
+	default:
+		return "image/png"
+	}
 }
