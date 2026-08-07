@@ -10,13 +10,11 @@ import (
 
 	"github.com/seven-agents/oh-my-commic/internal/ai"
 	"github.com/seven-agents/oh-my-commic/internal/auth"
+	"github.com/seven-agents/oh-my-commic/internal/models"
 )
 
-// defaultPanelCount is used when the request omits or under-specifies panelCount.
-const defaultPanelCount = 6
-
-// Handler serves the storyboard conversation and generation endpoints on top of
-// a Service. It resolves the authenticated user from the request context
+// Handler serves the unified conversational storyboard endpoint on top of a
+// Service. It resolves the authenticated user from the request context
 // (populated upstream by auth.RequireUser) and never trusts a client user ID.
 type Handler struct {
 	svc *Service
@@ -27,74 +25,47 @@ func NewHandler(svc *Service) *Handler {
 	return &Handler{svc: svc}
 }
 
-// Mount registers the story endpoints onto r using their absolute paths.
+// Mount registers the story endpoint onto r using its absolute path.
 //
-//	POST /api/chapters/{id}/converse
-//	POST /api/chapters/{id}/storyboard
+//	POST /api/chapters/{id}/storyboard-chat
 //
 // Like the sibling handlers, it does not attach auth.RequireUser: the caller
-// mounts these inside a group already wrapped with RequireUser.
+// mounts this inside a group already wrapped with RequireUser.
 func (h *Handler) Mount(r chi.Router) {
-	r.Post("/api/chapters/{id}/converse", h.Converse)
-	r.Post("/api/chapters/{id}/storyboard", h.Storyboard)
+	r.Post("/api/chapters/{id}/storyboard-chat", h.StoryboardChat)
 }
 
-// converseRequest is the body for POST /api/chapters/{id}/converse.
-type converseRequest struct {
+// storyboardChatRequest is the body for POST /api/chapters/{id}/storyboard-chat.
+type storyboardChatRequest struct {
 	Messages []ai.Msg `json:"messages"`
 }
 
-// storyboardRequest is the body for POST /api/chapters/{id}/storyboard.
-type storyboardRequest struct {
-	Messages   []ai.Msg `json:"messages"`
-	PanelCount int      `json:"panelCount"`
+// storyboardChatResponse is the body returned by the storyboard-chat endpoint:
+// the model's one-line reply plus the persisted structured panels.
+type storyboardChatResponse struct {
+	Reply  string         `json:"reply"`
+	Panels []models.Panel `json:"panels"`
 }
 
-// Converse handles POST /api/chapters/{id}/converse.
-func (h *Handler) Converse(w http.ResponseWriter, r *http.Request) {
+// StoryboardChat handles POST /api/chapters/{id}/storyboard-chat.
+func (h *Handler) StoryboardChat(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
 	chapterID, ok := parseID(w, r)
 	if !ok {
 		return
 	}
 
-	var req converseRequest
+	var req storyboardChatRequest
 	if !decodeJSON(w, r, &req) {
 		return
 	}
 
-	reply, err := h.svc.Converse(userID, chapterID, req.Messages)
+	reply, panels, err := h.svc.StoryboardChat(userID, chapterID, req.Messages)
 	if err != nil {
 		writeStoryError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"reply": reply})
-}
-
-// Storyboard handles POST /api/chapters/{id}/storyboard.
-func (h *Handler) Storyboard(w http.ResponseWriter, r *http.Request) {
-	userID := auth.UserID(r.Context())
-	chapterID, ok := parseID(w, r)
-	if !ok {
-		return
-	}
-
-	var req storyboardRequest
-	if !decodeJSON(w, r, &req) {
-		return
-	}
-
-	n := req.PanelCount
-	if n <= 0 {
-		n = defaultPanelCount
-	}
-
-	panels, err := h.svc.GenerateStoryboard(userID, chapterID, req.Messages, n)
-	if err != nil {
-		writeStoryError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, panels)
+	writeJSON(w, http.StatusOK, storyboardChatResponse{Reply: reply, Panels: panels})
 }
 
 // parseID reads the positive integer chapter id path parameter. On a missing or

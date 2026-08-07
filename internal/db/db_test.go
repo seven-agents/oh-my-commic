@@ -1,6 +1,7 @@
 package db
 
 import (
+	"database/sql"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -19,6 +20,97 @@ func TestMigrateCreatesTables(t *testing.T) {
 			t.Fatalf("表 %s 不存在: %v", tbl, err)
 		}
 	}
+}
+
+// TestPanelsStructuredColumns verifies the structured storyboard columns exist on
+// the panels table for a fresh DB (created inline by the CREATE TABLE statement).
+func TestPanelsStructuredColumns(t *testing.T) {
+	d, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	cols := panelColumnSet(t, d)
+	for _, want := range []string{"location", "event", "char_expressions"} {
+		if !cols[want] {
+			t.Fatalf("panels 表缺少列 %q，实际列: %v", want, cols)
+		}
+	}
+}
+
+// TestMigrateAddsColumnsToLegacyDB proves the idempotent ALTER path: a legacy
+// panels table without the structured columns gains them after Migrate, and a
+// second Migrate run does not fail on the duplicate columns.
+func TestMigrateAddsColumnsToLegacyDB(t *testing.T) {
+	d, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	// Drop and recreate panels WITHOUT the new columns to simulate a legacy DB.
+	if _, err := d.Exec(`DROP TABLE panels`); err != nil {
+		t.Fatalf("drop panels: %v", err)
+	}
+	if _, err := d.Exec(`CREATE TABLE panels (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  chapter_id INTEGER NOT NULL,
+  "order" INTEGER NOT NULL DEFAULT 0,
+  caption TEXT NOT NULL DEFAULT '',
+  character_ids TEXT NOT NULL DEFAULT '[]',
+  scene_id INTEGER NOT NULL DEFAULT 0,
+  image_prompt TEXT NOT NULL DEFAULT '',
+  image_url TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending'
+)`); err != nil {
+		t.Fatalf("create legacy panels: %v", err)
+	}
+
+	if err := Migrate(d); err != nil {
+		t.Fatalf("migrate legacy DB: %v", err)
+	}
+	cols := panelColumnSet(t, d)
+	for _, want := range []string{"location", "event", "char_expressions"} {
+		if !cols[want] {
+			t.Fatalf("迁移后 panels 表仍缺列 %q，实际列: %v", want, cols)
+		}
+	}
+
+	// A repeat Migrate must tolerate the now-duplicate columns.
+	if err := Migrate(d); err != nil {
+		t.Fatalf("重复迁移应幂等，got: %v", err)
+	}
+}
+
+// panelColumnSet returns the set of column names on the panels table.
+func panelColumnSet(t *testing.T, d *sql.DB) map[string]bool {
+	t.Helper()
+	rows, err := d.Query(`PRAGMA table_info(panels)`)
+	if err != nil {
+		t.Fatalf("pragma table_info: %v", err)
+	}
+	defer rows.Close()
+
+	cols := map[string]bool{}
+	for rows.Next() {
+		var (
+			cid        int
+			name       string
+			ctype      string
+			notNull    int
+			dfltValue  sql.NullString
+			primaryKey int
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notNull, &dfltValue, &primaryKey); err != nil {
+			t.Fatalf("scan table_info: %v", err)
+		}
+		cols[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows err: %v", err)
+	}
+	return cols
 }
 
 // TestForeignKeyCascadeDelete proves that ON DELETE CASCADE fires, which only

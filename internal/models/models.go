@@ -58,14 +58,23 @@ type Chapter struct {
 }
 
 // Panel is a single comic frame within a Chapter.
+//
+// Location, Event and CharExpressions carry the structured storyboard fields: a
+// panel's setting, the action, and each present character's facial expression
+// keyed by character id. CharacterIDs remains the flat list of present character
+// ids (derived from the characters the model referenced) and is what the render
+// layer uses to pick reference images.
 type Panel struct {
-	ID           int64   `json:"id"`
-	ChapterID    int64   `json:"chapterId"`
-	Order        int     `json:"order"`
-	Caption      string  `json:"caption"`
-	CharacterIDs []int64 `json:"characterIds"`
-	SceneID      int64   `json:"sceneId"`
-	ImagePrompt  string  `json:"imagePrompt"`
-	ImageURL     string  `json:"imageUrl"`
-	Status       string  `json:"status"`
+	ID              int64            `json:"id"`
+	ChapterID       int64            `json:"chapterId"`
+	Order           int              `json:"order"`
+	Caption         string           `json:"caption"`
+	CharacterIDs    []int64          `json:"characterIds"`
+	SceneID         int64            `json:"sceneId"`
+	ImagePrompt     string           `json:"imagePrompt"`
+	ImageURL        string           `json:"imageUrl"`
+	Status          string           `json:"status"`
+	Location        string           `json:"location"`
+	Event           string           `json:"event"`
+	CharExpressions map[int64]string `json:"charExpressions"`
 }

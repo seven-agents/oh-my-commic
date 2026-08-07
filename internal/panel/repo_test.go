@@ -84,7 +84,13 @@ func TestReplacePanelsReorders(t *testing.T) {
 	ch := env.newChapter(t, 1)
 
 	in := []models.Panel{
-		{Caption: "A", CharacterIDs: []int64{2, 3}},
+		{
+			Caption:         "A",
+			CharacterIDs:    []int64{2, 3},
+			Location:        "森林",
+			Event:           "出发",
+			CharExpressions: map[int64]string{2: "开心", 3: "好奇"},
+		},
 		{Caption: "B"},
 	}
 	out, err := env.panels.ReplacePanels(1, ch.ID, in)
@@ -108,10 +114,21 @@ func TestReplacePanelsReorders(t *testing.T) {
 	if len(got[0].CharacterIDs) != 2 || got[0].CharacterIDs[0] != 2 || got[0].CharacterIDs[1] != 3 {
 		t.Fatalf("CharacterIDs JSON 往返错: %+v", got[0])
 	}
+	// Structured fields must round-trip through the new columns.
+	if got[0].Location != "森林" || got[0].Event != "出发" {
+		t.Fatalf("location/event 往返错: %+v", got[0])
+	}
+	if got[0].CharExpressions[2] != "开心" || got[0].CharExpressions[3] != "好奇" {
+		t.Fatalf("CharExpressions JSON 往返错: %+v", got[0].CharExpressions)
+	}
 	// Panel B was inserted with no character ids; it must round-trip to an empty
 	// (non-nil) slice, never nil.
 	if got[1].CharacterIDs == nil {
 		t.Fatalf("空 CharacterIDs 应为非 nil 空切片, got nil")
+	}
+	// A panel with no expressions must round-trip to an empty (non-nil) map.
+	if got[1].CharExpressions == nil {
+		t.Fatalf("空 CharExpressions 应为非 nil 空 map, got nil")
 	}
 	if got[0].Status != statusPending {
 		t.Fatalf("新分镜状态应为 pending, got %q", got[0].Status)
@@ -158,16 +175,25 @@ func TestUpdatePanel(t *testing.T) {
 	id := out[0].ID
 
 	updated, err := env.panels.UpdatePanel(1, id, models.Panel{
-		Caption:      "edited",
-		CharacterIDs: []int64{7},
-		SceneID:      5,
-		ImagePrompt:  "a prompt",
+		Caption:         "edited",
+		CharacterIDs:    []int64{7},
+		SceneID:         5,
+		ImagePrompt:     "a prompt",
+		Location:        "山顶",
+		Event:           "看日出",
+		CharExpressions: map[int64]string{7: "惊喜"},
 	})
 	if err != nil {
 		t.Fatalf("update panel: %v", err)
 	}
 	if updated.Caption != "edited" || updated.SceneID != 5 || updated.ImagePrompt != "a prompt" {
 		t.Fatalf("editable fields not persisted: %+v", updated)
+	}
+	if updated.Location != "山顶" || updated.Event != "看日出" {
+		t.Fatalf("location/event 未更新: %+v", updated)
+	}
+	if updated.CharExpressions[7] != "惊喜" {
+		t.Fatalf("CharExpressions 未更新: %+v", updated.CharExpressions)
 	}
 	if len(updated.CharacterIDs) != 1 || updated.CharacterIDs[0] != 7 {
 		t.Fatalf("CharacterIDs 未更新: %+v", updated)

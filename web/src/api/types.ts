@@ -63,6 +63,9 @@ export type Panel = {
   imagePrompt: string
   imageUrl: string
   status: PanelStatus
+  location: string
+  event: string
+  charExpressions: Record<number, string>
 }
 
 // AI 对话消息

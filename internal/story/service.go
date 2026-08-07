@@ -38,56 +38,41 @@ func NewService(client *ai.Client, assets *asset.Service, chapters *chapter.Serv
 	return &Service{ai: client, assets: assets, chapters: chapters, panels: panels}
 }
 
-// Converse verifies chapter ownership, loads the book's assets, and runs one
-// turn of storyboard discussion. Cross-user or unknown chapters yield
-// ErrNotFound.
-func (s *Service) Converse(userID, chapterID int64, history []ai.Msg) (string, error) {
-	_, assets, err := s.loadAssets(userID, chapterID)
-	if err != nil {
-		return "", err
-	}
-
-	reply, err := ai.Converse(context.Background(), s.ai, history, assets)
-	if err != nil {
-		return "", fmt.Errorf("story: converse: %w", err)
-	}
-	return reply, nil
-}
-
-// GenerateStoryboard verifies ownership, loads assets, asks the model for n
-// panels, persists them via ReplacePanels, advances the chapter to
-// storyboarding, and returns the stored panels. Cross-user or unknown chapters
-// yield ErrNotFound.
-func (s *Service) GenerateStoryboard(userID, chapterID int64, history []ai.Msg, n int) ([]models.Panel, error) {
+// StoryboardChat runs one turn of the unified conversational storyboard flow: it
+// verifies chapter ownership, loads the book's assets, asks the model for a
+// {reply, panels} result, persists the structured panels via ReplacePanels,
+// advances the chapter to storyboarding, and returns the model's reply plus the
+// stored panels. Cross-user or unknown chapters yield ErrNotFound; an AI or parse
+// failure is returned as a non-ErrNotFound error so nothing half-baked is stored.
+func (s *Service) StoryboardChat(userID, chapterID int64, history []ai.Msg) (string, []models.Panel, error) {
 	ch, assets, err := s.loadAssets(userID, chapterID)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
 
-	drafts, err := ai.GenStoryboard(context.Background(), s.ai, history, assets, n)
+	res, err := ai.StoryboardChat(context.Background(), s.ai, history, assets)
 	if err != nil {
-		return nil, fmt.Errorf("story: generate storyboard: %w", err)
+		return "", nil, fmt.Errorf("story: storyboard chat: %w", err)
 	}
 
-	mapped := draftsToPanels(chapterID, drafts, assets)
+	mapped := draftsToPanels(chapterID, res.Panels)
 
 	stored, err := s.panels.ReplacePanels(userID, chapterID, mapped)
 	if err != nil {
-		return nil, mapOwnershipErr(err)
+		return "", nil, mapOwnershipErr(err)
 	}
 
-	// Only advance the state machine on the first storyboard generation. When the
-	// user regenerates a chapter already in "storyboarding" (a normal iterate flow)
-	// there is no self-transition, so calling SetStatus would fail with
-	// ErrInvalidStatus even though the panels were replaced successfully. Skipping
-	// the no-op keeps the state machine untouched and the caller gets the panels.
+	// Only advance the state machine on the first turn. On later turns the chapter
+	// is already "storyboarding"; there is no self-transition, so calling SetStatus
+	// would fail with ErrInvalidStatus even though the panels were replaced
+	// successfully. Skipping the no-op keeps the state machine untouched.
 	if ch.Status != storyboardingStatus {
 		if _, err := s.chapters.SetStatus(userID, chapterID, storyboardingStatus); err != nil {
-			return nil, mapOwnershipErr(err)
+			return "", nil, mapOwnershipErr(err)
 		}
 	}
 
-	return stored, nil
+	return res.Reply, stored, nil
 }
 
 // loadAssets confirms ownership of chapterID and returns the chapter plus the
@@ -111,53 +96,34 @@ func (s *Service) loadAssets(userID, chapterID int64) (models.Chapter, ai.AssetC
 	return ch, ai.AssetContext{Characters: characters, Scenes: scenes}, nil
 }
 
-// draftsToPanels maps model drafts to persistable panels, all in pending status.
-// It filters hallucinated or foreign asset references against the book's own
-// assets: only character ids that exist in the book are kept, and a sceneId that
-// is not one of the book's scenes is reset to 0. This prevents storing ids the
-// model invented or that belong to another book.
-func draftsToPanels(chapterID int64, drafts []ai.PanelDraft, assets ai.AssetContext) []models.Panel {
-	validChars := make(map[int64]struct{}, len(assets.Characters))
-	for _, c := range assets.Characters {
-		validChars[c.ID] = struct{}{}
-	}
-	validScenes := make(map[int64]struct{}, len(assets.Scenes))
-	for _, s := range assets.Scenes {
-		validScenes[s.ID] = struct{}{}
-	}
-
+// draftsToPanels maps the model's structured drafts to persistable panels, all
+// in pending status. The ai layer has already sanitized every draft against the
+// book's assets (dropping hallucinated character/scene ids and enforcing the ≤3
+// reference cap), so here we simply flatten each draft: CharacterIDs is the list
+// of present character ids and CharExpressions maps each of those ids to its
+// expression.
+func draftsToPanels(chapterID int64, drafts []ai.PanelDraftV2) []models.Panel {
 	panels := make([]models.Panel, 0, len(drafts))
 	for _, d := range drafts {
+		ids := make([]int64, 0, len(d.Characters))
+		exprs := make(map[int64]string, len(d.Characters))
+		for _, cr := range d.Characters {
+			ids = append(ids, cr.ID)
+			exprs[cr.ID] = cr.Expression
+		}
 		panels = append(panels, models.Panel{
-			ChapterID:    chapterID,
-			Caption:      d.Caption,
-			CharacterIDs: filterCharacterIDs(d.CharacterIDs, validChars),
-			SceneID:      filterSceneID(d.SceneID, validScenes),
-			ImagePrompt:  d.ImagePrompt,
-			Status:       pendingStatus,
+			ChapterID:       chapterID,
+			Caption:         d.Caption,
+			CharacterIDs:    ids,
+			SceneID:         d.SceneID,
+			ImagePrompt:     d.ImagePrompt,
+			Location:        d.Location,
+			Event:           d.Event,
+			CharExpressions: exprs,
+			Status:          pendingStatus,
 		})
 	}
 	return panels
-}
-
-// filterCharacterIDs keeps only ids present in valid, preserving order. It always
-// returns a non-nil slice so panels persist an empty array rather than null.
-func filterCharacterIDs(ids []int64, valid map[int64]struct{}) []int64 {
-	out := make([]int64, 0, len(ids))
-	for _, id := range ids {
-		if _, ok := valid[id]; ok {
-			out = append(out, id)
-		}
-	}
-	return out
-}
-
-// filterSceneID returns id when it is a valid scene for the book, otherwise 0.
-func filterSceneID(id int64, valid map[int64]struct{}) int64 {
-	if _, ok := valid[id]; ok {
-		return id
-	}
-	return 0
 }
 
 // mapOwnershipErr normalizes ownership-related errors from collaborators into
