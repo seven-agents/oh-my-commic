@@ -51,3 +51,11 @@ func UserID(ctx context.Context) int64 {
 	id, _ := ctx.Value(userIDKey).(int64)
 	return id
 }
+
+// WithUserID returns a copy of ctx carrying userID under the same key
+// RequireUser uses. It lets other packages (and their tests) construct a request
+// context as if it had passed through RequireUser, without depending on the
+// unexported key.
+func WithUserID(ctx context.Context, userID int64) context.Context {
+	return context.WithValue(ctx, userIDKey, userID)
+}
