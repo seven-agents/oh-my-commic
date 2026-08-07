@@ -168,7 +168,7 @@ P1→M1 | P2→M2 | P3→M2+M3+M4 | P4→M3+M7 | P5→M4+M5+M6+M7+M8 | P6→M4+M
 - **认证**: session cookie（或 JWT）。中间件解析出 `user_id` 注入 request context。
 - **授权**: 每个 repository 查询强制带 `user_id` 条件；Book 级资源校验 `book.user_id == 当前用户`，章节/分镜/资产通过外键级联校验。
 - **越权防护**: 任何按 id 访问的资源，先校验归属，否则 404（不泄露存在性）。
-- **图片存储**: 按 `user_id/book_id/...` 分目录，避免路径穿越。
+- **图片存储**: 本地文件系统，按 `book_id` 分目录（`data/{book_id}/...`）；文件名用随机 id，避免路径穿越。访问时仍校验 book 归属当前用户。
 
 ---
 
@@ -178,7 +178,7 @@ P1→M1 | P2→M2 | P3→M2+M3+M4 | P4→M3+M7 | P5→M4+M5+M6+M7+M8 | P6→M4+M
 前端: React + Vite + TypeScript + Tailwind (SPA)   ← 由 Claude 全包
        └─ 与后端 JSON API 交互；页面结构以 YAML 图和用户对齐
 后端: Go + chi(或 net/http)   分层 handler→service→repository
-存储: SQLite (开发迭代快) + 本地文件目录存图片
+存储: SQLite (开发迭代快) + 本地文件目录存图片(按 book_id 分目录, data/{book_id}/)
 AI:   DashScope 千问   文本(qwen) + 生图(wan2.7-image-pro)
 配置: .env (含 DASHSCOPE_API_KEY)，.gitignore 排除
 ```
