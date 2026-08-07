@@ -46,7 +46,7 @@ func TestStoryboardChatParsesAndSanitizes(t *testing.T) {
 	defer ts.Close()
 
 	c := &Client{Key: "sk-x", TextBaseURL: ts.URL, TextModel: "qwen-plus", HTTP: ts.Client()}
-	res, err := StoryboardChat(context.Background(), c, nil, twoCharOneScene())
+	res, err := StoryboardChat(context.Background(), c, nil, twoCharOneScene(), 0)
 	if err != nil {
 		t.Fatalf("storyboard chat: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestStoryboardChatDropsSceneWhenThreeCharacters(t *testing.T) {
 	defer ts.Close()
 
 	c := &Client{Key: "sk-x", TextBaseURL: ts.URL, TextModel: "qwen-plus", HTTP: ts.Client()}
-	res, err := StoryboardChat(context.Background(), c, nil, assets)
+	res, err := StoryboardChat(context.Background(), c, nil, assets, 0)
 	if err != nil {
 		t.Fatalf("storyboard chat: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestStoryboardChatFencedJSON(t *testing.T) {
 	defer ts.Close()
 
 	c := &Client{Key: "sk-x", TextBaseURL: ts.URL, TextModel: "qwen-plus", HTTP: ts.Client()}
-	res, err := StoryboardChat(context.Background(), c, nil, AssetContext{})
+	res, err := StoryboardChat(context.Background(), c, nil, AssetContext{}, 0)
 	if err != nil {
 		t.Fatalf("代码块 JSON 应解析: %v", err)
 	}
@@ -137,7 +137,7 @@ func TestStoryboardChatNoObjectErrors(t *testing.T) {
 	defer ts.Close()
 
 	c := &Client{Key: "sk-x", TextBaseURL: ts.URL, TextModel: "qwen-plus", HTTP: ts.Client()}
-	if _, err := StoryboardChat(context.Background(), c, nil, AssetContext{}); err == nil {
+	if _, err := StoryboardChat(context.Background(), c, nil, AssetContext{}, 0); err == nil {
 		t.Fatal("无 JSON 对象时应报错")
 	}
 }
@@ -148,7 +148,7 @@ func TestStoryboardChatMalformedErrors(t *testing.T) {
 	defer ts.Close()
 
 	c := &Client{Key: "sk-x", TextBaseURL: ts.URL, TextModel: "qwen-plus", HTTP: ts.Client()}
-	if _, err := StoryboardChat(context.Background(), c, nil, AssetContext{}); err == nil {
+	if _, err := StoryboardChat(context.Background(), c, nil, AssetContext{}, 0); err == nil {
 		t.Fatal("非法 JSON 应报错")
 	}
 }

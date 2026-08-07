@@ -42,15 +42,17 @@ func NewService(client *ai.Client, assets *asset.Service, chapters *chapter.Serv
 // verifies chapter ownership, loads the book's assets, asks the model for a
 // {reply, panels} result, persists the structured panels via ReplacePanels,
 // advances the chapter to storyboarding, and returns the model's reply plus the
-// stored panels. Cross-user or unknown chapters yield ErrNotFound; an AI or parse
-// failure is returned as a non-ErrNotFound error so nothing half-baked is stored.
-func (s *Service) StoryboardChat(userID, chapterID int64, history []ai.Msg) (string, []models.Panel, error) {
+// stored panels. panelCount is a soft target for how many frames to produce
+// (0 lets the prompt pick a default range). Cross-user or unknown chapters yield
+// ErrNotFound; an AI or parse failure is returned as a non-ErrNotFound error so
+// nothing half-baked is stored.
+func (s *Service) StoryboardChat(userID, chapterID int64, history []ai.Msg, panelCount int) (string, []models.Panel, error) {
 	ch, assets, err := s.loadAssets(userID, chapterID)
 	if err != nil {
 		return "", nil, err
 	}
 
-	res, err := ai.StoryboardChat(context.Background(), s.ai, history, assets)
+	res, err := ai.StoryboardChat(context.Background(), s.ai, history, assets, panelCount)
 	if err != nil {
 		return "", nil, fmt.Errorf("story: storyboard chat: %w", err)
 	}

@@ -53,8 +53,9 @@ func assetList(assets AssetContext) string {
 // characters with expressions, event). Asset ids constrain what may be
 // referenced, and the ≤3-refs-per-panel rule is stated so the model self-limits
 // (the server re-validates regardless).
-func storyboardChatPrompt(assets AssetContext) string {
+func storyboardChatPrompt(assets AssetContext, panelCount int) string {
 	return tonePrompt + "\n\n" + assetList(assets) +
+		"\n" + panelCountInstruction(panelCount) +
 		"\n请与用户对话，一起打磨这一章的分镜。每次只输出一个 JSON 对象，不要输出任何解释、前后缀或代码块标记：\n" +
 		"{\n" +
 		"  \"reply\": \"给用户的一句温暖回应\",\n" +
@@ -75,6 +76,22 @@ func storyboardChatPrompt(assets AssetContext) string {
 		"- characters[].id 和 sceneId 只能引用上面列出的 id，不要编造；\n" +
 		"- imagePrompt 用英文，需包含地点、每个出场角色及其表情、事件，吉卜力/宫崎骏风格；\n" +
 		"- 只输出这个 JSON 对象本身。"
+}
+
+// panelCountInstruction tells the model to break the chapter into MULTIPLE
+// distinct frames. When panelCount > 0 it asks for approximately that many
+// panels; otherwise it asks for a sensible default range. Either way, an
+// explicit count stated by the user in the conversation takes precedence.
+func panelCountInstruction(panelCount int) string {
+	var target string
+	if panelCount > 0 {
+		target = fmt.Sprintf("请把这一章拆成大约 %d 格分镜", panelCount)
+	} else {
+		target = "请把故事拆成 4~8 格分镜（除非另有要求）"
+	}
+	return "请把这一章的故事拆成多格分镜，每一格是故事里不同的时刻/情节，不要只画一格。" +
+		target + "。" +
+		"如果用户在对话中明确指定了分镜格数，以用户的要求为准。"
 }
 
 // firstNonEmpty returns the first non-empty string among the arguments.

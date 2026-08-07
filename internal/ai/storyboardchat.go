@@ -43,9 +43,11 @@ type StoryboardResult struct {
 // prepends the structured system prompt to the accumulated history, calls the
 // chat model, robustly extracts the JSON object embedded in the reply (tolerating
 // surrounding prose and code fences), and sanitizes every panel against the
-// book's real assets before returning.
-func StoryboardChat(ctx context.Context, c *Client, history []Msg, assets AssetContext) (StoryboardResult, error) {
-	messages := append([]Msg{{Role: "system", Content: storyboardChatPrompt(assets)}}, history...)
+// book's real assets before returning. panelCount is a soft target threaded into
+// the system prompt (0 = let the prompt use its default range); the user may
+// still override it in conversation.
+func StoryboardChat(ctx context.Context, c *Client, history []Msg, assets AssetContext, panelCount int) (StoryboardResult, error) {
+	messages := append([]Msg{{Role: "system", Content: storyboardChatPrompt(assets, panelCount)}}, history...)
 
 	content, err := c.Chat(ctx, messages)
 	if err != nil {
