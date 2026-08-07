@@ -89,6 +89,47 @@ func TestSaveUniqueFilenames(t *testing.T) {
 	}
 }
 
+func TestReadByURLRoundTrip(t *testing.T) {
+	s := Local{Root: t.TempDir()}
+	url, err := s.SaveBytes(7, ".png", []byte("pixels"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, ext, err := s.ReadByURL(url)
+	if err != nil {
+		t.Fatalf("ReadByURL: %v", err)
+	}
+	if string(data) != "pixels" {
+		t.Fatalf("content wrong: %q", string(data))
+	}
+	if ext != ".png" {
+		t.Fatalf("ext wrong: %q", ext)
+	}
+}
+
+func TestReadByURLRejectsTraversal(t *testing.T) {
+	root := t.TempDir()
+	secretDir := t.TempDir()
+	secret := filepath.Join(secretDir, "secret.txt")
+	if err := os.WriteFile(secret, []byte("TOPSECRET"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s := Local{Root: root}
+	bad := []string{
+		"/media/../../" + filepath.Base(secretDir) + "/secret.txt",
+		"/media/../secret.txt",
+		"/not-media/x.png",
+		"/media/",
+	}
+	for _, u := range bad {
+		if data, _, err := s.ReadByURL(u); err == nil && strings.Contains(string(data), "TOPSECRET") {
+			t.Fatalf("traversal leaked file for %q", u)
+		} else if err == nil {
+			t.Fatalf("expected rejection for %q", u)
+		}
+	}
+}
+
 func TestHandlerServesFile(t *testing.T) {
 	s := Local{Root: t.TempDir()}
 	url, err := s.SaveBytes(9, ".png", []byte("pixels"))

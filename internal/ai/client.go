@@ -15,6 +15,7 @@ type Client struct {
 	ImageBaseURL string
 	TextModel    string
 	ImageModel   string
+	EditModel    string
 	HTTP         *http.Client
 
 	// PollInterval controls polling cadence for async image tasks (Task 7.1).

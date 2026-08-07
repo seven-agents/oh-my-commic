@@ -133,9 +133,21 @@ export default function AssetEditor() {
 
         {loading ? (
           <LoadingClouds label="正在读取…" />
+        ) : saving ? (
+          <Card className="flex flex-col items-center gap-2 py-10 text-center">
+            <LoadingClouds
+              label={isScene ? '正在把场景画成绘本背景… ✨' : '正在把 TA 画成漫画角色，稍等一下下～ ✨'}
+            />
+            <p className="text-sm text-ink-soft/70">AI 正在施展吉卜力魔法，大约需要 15–30 秒</p>
+          </Card>
         ) : (
           <Card className="flex flex-col gap-5">
             <ImageUploadZone bookId={bookId} imageUrl={form.imageUrl} onUploaded={(url) => update({ imageUrl: url })} />
+            <p className="-mt-2 text-center text-xs text-ink-soft/70">
+              {isScene
+                ? '保存时 AI 会把这张图画成吉卜力风格的绘本背景 ✨'
+                : '保存时 AI 会把这张图画成吉卜力风格的角色形象 ✨'}
+            </p>
 
             <Input
               id="asset-name"
