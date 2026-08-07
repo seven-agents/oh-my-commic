@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type Dispatch, type SetStateAction } from 'react'
 import { api } from '../../api/client'
 import type { Chapter, Character, Panel, Scene } from '../../api/types'
 import { errorMessage } from '../../api/errors'
@@ -10,7 +10,7 @@ export type ChapterData = {
   index: AssetIndex
   loading: boolean
   error: string
-  setPanels: (panels: Panel[]) => void
+  setPanels: Dispatch<SetStateAction<Panel[]>>
   setChapter: (chapter: Chapter) => void
 }
 
