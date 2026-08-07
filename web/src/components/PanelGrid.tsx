@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useState, type Dispatch, type SetStateAction } from 'react'
 import { Button, Card } from './ui'
 import { PanelCard } from './PanelCard'
 import { api } from '../api/client'
@@ -9,7 +9,7 @@ import { type AssetIndex, resolveActors, resolveScene } from './chapter/assetLoo
 type PanelGridProps = {
   panels: Panel[]
   index: AssetIndex
-  onPanelsChange: (panels: Panel[]) => void
+  onPanelsChange: Dispatch<SetStateAction<Panel[]>>
   onNext: () => void
 }
 
@@ -18,11 +18,9 @@ export function PanelGrid({ panels, index, onPanelsChange, onNext }: PanelGridPr
   const [error, setError] = useState('')
   const [bulk, setBulk] = useState(false)
 
-  const replacePanel = (updated: Panel) =>
-    onPanelsChange(panels.map((p) => (p.id === updated.id ? updated : p)))
-
-  const setPanelStatus = (id: number, status: Panel['status']) =>
-    onPanelsChange(panels.map((p) => (p.id === id ? { ...p, status } : p)))
+  // 函数式更新：每次都基于最新 state 打补丁，避免快照覆盖已生成分镜。
+  const applyPanel = (id: number, patch: Partial<Panel>) =>
+    onPanelsChange((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)))
 
   const savePanel = async (panel: Panel, patch: Partial<Panel>) => {
     setError('')
@@ -34,7 +32,7 @@ export function PanelGrid({ panels, index, onPanelsChange, onNext }: PanelGridPr
     }
     try {
       const saved = await api.put<Panel>(`/api/panels/${panel.id}`, body)
-      replacePanel(saved)
+      applyPanel(saved.id, saved)
     } catch (err) {
       setError(errorMessage(err))
     }
@@ -42,29 +40,29 @@ export function PanelGrid({ panels, index, onPanelsChange, onNext }: PanelGridPr
 
   const renderPanel = async (panel: Panel) => {
     setError('')
-    setPanelStatus(panel.id, 'rendering')
+    applyPanel(panel.id, { status: 'rendering' })
     try {
       const done = await api.post<Panel>(`/api/panels/${panel.id}/render`)
-      replacePanel(done)
+      applyPanel(done.id, done)
     } catch (err) {
       setError(errorMessage(err))
-      setPanelStatus(panel.id, 'failed')
+      applyPanel(panel.id, { status: 'failed' })
     }
   }
 
   const renderAll = async () => {
     setBulk(true)
     setError('')
-    // 逐格顺序生成，避免压垮上游；每次读最新状态。
+    // 逐格顺序生成，避免压垮上游；每格用函数式更新叠加到最新 state。
     for (const p of panels) {
       if (p.status === 'done') continue
-      setPanelStatus(p.id, 'rendering')
+      applyPanel(p.id, { status: 'rendering' })
       try {
         const done = await api.post<Panel>(`/api/panels/${p.id}/render`)
-        replacePanel(done)
+        applyPanel(done.id, done)
       } catch (err) {
         setError(errorMessage(err))
-        setPanelStatus(p.id, 'failed')
+        applyPanel(p.id, { status: 'failed' })
       }
     }
     setBulk(false)
