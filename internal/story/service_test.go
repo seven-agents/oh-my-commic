@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/seven-agents/oh-my-commic/internal/ai"
@@ -25,6 +27,23 @@ type storyTestEnv struct {
 	assets   *asset.Service
 	books    *book.Repo
 	db       *sql.DB
+
+	mu      sync.Mutex
+	content string
+}
+
+// setContent updates the raw string the fake DashScope server returns as the
+// single chat completion. Guarded by a mutex so it is race-safe.
+func (e *storyTestEnv) setContent(content string) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.content = content
+}
+
+func (e *storyTestEnv) getContent() string {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.content
 }
 
 // newStoryTestEnv opens an in-memory DB, seeds two users, and wires the full
@@ -39,8 +58,10 @@ func newStoryTestEnv(t *testing.T, content string) *storyTestEnv {
 	t.Cleanup(func() { d.Close() })
 	seedUsers(t, d, 2)
 
+	env := &storyTestEnv{content: content}
+
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Write([]byte(`{"choices":[{"message":{"content":` + strconv.Quote(content) + `}}]}`))
+		w.Write([]byte(`{"choices":[{"message":{"content":` + strconv.Quote(env.getContent()) + `}}]}`))
 	}))
 	t.Cleanup(ts.Close)
 
@@ -51,17 +72,24 @@ func newStoryTestEnv(t *testing.T, content string) *storyTestEnv {
 	chapterSvc := chapter.NewService(chapter.NewRepo(d), bookRepo)
 	panelSvc := panel.NewService(panel.NewRepo(d), chapterSvc)
 
-	return &storyTestEnv{
-		svc:      NewService(client, assetSvc, chapterSvc, panelSvc),
-		chapters: chapterSvc,
-		assets:   assetSvc,
-		books:    bookRepo,
-		db:       d,
-	}
+	env.svc = NewService(client, assetSvc, chapterSvc, panelSvc)
+	env.chapters = chapterSvc
+	env.assets = assetSvc
+	env.books = bookRepo
+	env.db = d
+	return env
 }
 
 // newChapter seeds a book owned by userID and a chapter under it.
 func (e *storyTestEnv) newChapter(t *testing.T, userID int64) models.Chapter {
+	t.Helper()
+	ch, _ := e.newChapterWithBook(t, userID)
+	return ch
+}
+
+// newChapterWithBook seeds a book owned by userID and a chapter under it,
+// returning both so tests can also seed book-scoped assets.
+func (e *storyTestEnv) newChapterWithBook(t *testing.T, userID int64) (models.Chapter, models.Book) {
 	t.Helper()
 	b, err := e.books.Create(userID, "书", "ghibli", "")
 	if err != nil {
@@ -71,7 +99,7 @@ func (e *storyTestEnv) newChapter(t *testing.T, userID int64) models.Chapter {
 	if err != nil {
 		t.Fatalf("create chapter: %v", err)
 	}
-	return c
+	return c, b
 }
 
 // seedUsers inserts n users so books referencing user ids 1..n satisfy the FK.
@@ -111,9 +139,20 @@ func TestConverseCrossUserNotFound(t *testing.T) {
 }
 
 func TestGenerateStoryboardPersistsPanels(t *testing.T) {
-	body := "分镜：[{\"caption\":\"出发\",\"characterIds\":[1],\"sceneId\":2,\"imagePrompt\":\"fox\"},{\"caption\":\"回家\",\"characterIds\":[],\"sceneId\":0,\"imagePrompt\":\"home\"}]"
-	env := newStoryTestEnv(t, body)
-	ch := env.newChapter(t, 1)
+	env := newStoryTestEnv(t, "placeholder")
+	ch, b := env.newChapterWithBook(t, 1)
+
+	char, err := env.assets.CreateCharacter(1, b.ID, models.Character{Name: "小狐狸", Type: "person"})
+	if err != nil {
+		t.Fatalf("create character: %v", err)
+	}
+	scene, err := env.assets.CreateScene(1, b.ID, models.Scene{Name: "森林"})
+	if err != nil {
+		t.Fatalf("create scene: %v", err)
+	}
+	env.setContent("分镜：[{\"caption\":\"出发\",\"characterIds\":[" +
+		strconv.FormatInt(char.ID, 10) + "],\"sceneId\":" + strconv.FormatInt(scene.ID, 10) +
+		",\"imagePrompt\":\"fox\"},{\"caption\":\"回家\",\"characterIds\":[],\"sceneId\":0,\"imagePrompt\":\"home\"}]")
 
 	panels, err := env.svc.GenerateStoryboard(1, ch.ID, nil, 2)
 	if err != nil {
@@ -125,7 +164,7 @@ func TestGenerateStoryboardPersistsPanels(t *testing.T) {
 	if panels[0].Caption != "出发" || panels[0].Status != "pending" {
 		t.Fatalf("首个分镜错: %+v", panels[0])
 	}
-	if len(panels[0].CharacterIDs) != 1 || panels[0].CharacterIDs[0] != 1 || panels[0].SceneID != 2 {
+	if len(panels[0].CharacterIDs) != 1 || panels[0].CharacterIDs[0] != char.ID || panels[0].SceneID != scene.ID {
 		t.Fatalf("索引解析错: %+v", panels[0])
 	}
 
@@ -159,5 +198,67 @@ func TestGenerateStoryboardBadJSONErrors(t *testing.T) {
 	}
 	if errors.Is(err, ErrNotFound) {
 		t.Fatalf("AI 解析错误不应是 ErrNotFound: %v", err)
+	}
+}
+
+// TestGenerateStoryboardRegenerateSucceeds guards against the state-machine bug:
+// regenerating a storyboard on a chapter already in "storyboarding" must succeed
+// (no self-transition exists) rather than fail after the panels were replaced.
+func TestGenerateStoryboardRegenerateSucceeds(t *testing.T) {
+	body := "[{\"caption\":\"v\",\"characterIds\":[],\"sceneId\":0,\"imagePrompt\":\"x\"}]"
+	env := newStoryTestEnv(t, body)
+	ch := env.newChapter(t, 1)
+
+	first, err := env.svc.GenerateStoryboard(1, ch.ID, nil, 1)
+	if err != nil || len(first) != 1 {
+		t.Fatalf("首次生成应成功: %v (%d)", err, len(first))
+	}
+
+	// Second generation on the same chapter (already storyboarding) must NOT error.
+	second, err := env.svc.GenerateStoryboard(1, ch.ID, nil, 1)
+	if err != nil {
+		t.Fatalf("重生成不应报错: %v", err)
+	}
+	if len(second) != 1 {
+		t.Fatalf("重生成应替换出1个分镜, got %d", len(second))
+	}
+
+	got, err := env.chapters.GetChapter(1, ch.ID)
+	if err != nil {
+		t.Fatalf("get chapter: %v", err)
+	}
+	if got.Status != "storyboarding" {
+		t.Fatalf("章节状态应仍为 storyboarding, got %q", got.Status)
+	}
+}
+
+// TestGenerateStoryboardFiltersForeignIDs verifies hallucinated character ids and
+// foreign scene ids are dropped before persistence.
+func TestGenerateStoryboardFiltersForeignIDs(t *testing.T) {
+	// The model returns character id 999 (nonexistent) and scene id 888 (foreign);
+	// only the valid character id (created below) and sceneId==0 must survive.
+	body := "[{\"caption\":\"c\",\"characterIds\":[VALID,999],\"sceneId\":888,\"imagePrompt\":\"x\"}]"
+	env := newStoryTestEnv(t, "placeholder")
+	ch, b := env.newChapterWithBook(t, 1)
+
+	char, err := env.assets.CreateCharacter(1, b.ID, models.Character{Name: "小狐狸", Type: "person"})
+	if err != nil {
+		t.Fatalf("create character: %v", err)
+	}
+	// Rewrite the fake server body to reference the real character id.
+	env.setContent(strings.Replace(body, "VALID", strconv.FormatInt(char.ID, 10), 1))
+
+	panels, err := env.svc.GenerateStoryboard(1, ch.ID, nil, 1)
+	if err != nil {
+		t.Fatalf("generate: %v", err)
+	}
+	if len(panels) != 1 {
+		t.Fatalf("应有1个分镜, got %d", len(panels))
+	}
+	if len(panels[0].CharacterIDs) != 1 || panels[0].CharacterIDs[0] != char.ID {
+		t.Fatalf("应只保留合法角色 id: %+v", panels[0].CharacterIDs)
+	}
+	if panels[0].SceneID != 0 {
+		t.Fatalf("外部 sceneId 应被清零, got %d", panels[0].SceneID)
 	}
 }

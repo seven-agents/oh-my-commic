@@ -42,7 +42,7 @@ func NewService(client *ai.Client, assets *asset.Service, chapters *chapter.Serv
 // turn of storyboard discussion. Cross-user or unknown chapters yield
 // ErrNotFound.
 func (s *Service) Converse(userID, chapterID int64, history []ai.Msg) (string, error) {
-	assets, err := s.loadAssets(userID, chapterID)
+	_, assets, err := s.loadAssets(userID, chapterID)
 	if err != nil {
 		return "", err
 	}
@@ -59,7 +59,7 @@ func (s *Service) Converse(userID, chapterID int64, history []ai.Msg) (string, e
 // storyboarding, and returns the stored panels. Cross-user or unknown chapters
 // yield ErrNotFound.
 func (s *Service) GenerateStoryboard(userID, chapterID int64, history []ai.Msg, n int) ([]models.Panel, error) {
-	assets, err := s.loadAssets(userID, chapterID)
+	ch, assets, err := s.loadAssets(userID, chapterID)
 	if err != nil {
 		return nil, err
 	}
@@ -69,55 +69,95 @@ func (s *Service) GenerateStoryboard(userID, chapterID int64, history []ai.Msg, 
 		return nil, fmt.Errorf("story: generate storyboard: %w", err)
 	}
 
-	mapped := draftsToPanels(chapterID, drafts)
+	mapped := draftsToPanels(chapterID, drafts, assets)
 
 	stored, err := s.panels.ReplacePanels(userID, chapterID, mapped)
 	if err != nil {
 		return nil, mapOwnershipErr(err)
 	}
 
-	if _, err := s.chapters.SetStatus(userID, chapterID, storyboardingStatus); err != nil {
-		return nil, mapOwnershipErr(err)
+	// Only advance the state machine on the first storyboard generation. When the
+	// user regenerates a chapter already in "storyboarding" (a normal iterate flow)
+	// there is no self-transition, so calling SetStatus would fail with
+	// ErrInvalidStatus even though the panels were replaced successfully. Skipping
+	// the no-op keeps the state machine untouched and the caller gets the panels.
+	if ch.Status != storyboardingStatus {
+		if _, err := s.chapters.SetStatus(userID, chapterID, storyboardingStatus); err != nil {
+			return nil, mapOwnershipErr(err)
+		}
 	}
 
 	return stored, nil
 }
 
-// loadAssets confirms ownership of chapterID and returns the book's asset
-// context. Ownership failures are mapped to ErrNotFound.
-func (s *Service) loadAssets(userID, chapterID int64) (ai.AssetContext, error) {
+// loadAssets confirms ownership of chapterID and returns the chapter plus the
+// book's asset context. Ownership failures are mapped to ErrNotFound.
+func (s *Service) loadAssets(userID, chapterID int64) (models.Chapter, ai.AssetContext, error) {
 	ch, err := s.chapters.GetChapter(userID, chapterID)
 	if err != nil {
-		return ai.AssetContext{}, mapOwnershipErr(err)
+		return models.Chapter{}, ai.AssetContext{}, mapOwnershipErr(err)
 	}
 
 	characters, err := s.assets.ListCharacters(userID, ch.BookID)
 	if err != nil {
-		return ai.AssetContext{}, mapOwnershipErr(err)
+		return models.Chapter{}, ai.AssetContext{}, mapOwnershipErr(err)
 	}
 
 	scenes, err := s.assets.ListScenes(userID, ch.BookID)
 	if err != nil {
-		return ai.AssetContext{}, mapOwnershipErr(err)
+		return models.Chapter{}, ai.AssetContext{}, mapOwnershipErr(err)
 	}
 
-	return ai.AssetContext{Characters: characters, Scenes: scenes}, nil
+	return ch, ai.AssetContext{Characters: characters, Scenes: scenes}, nil
 }
 
 // draftsToPanels maps model drafts to persistable panels, all in pending status.
-func draftsToPanels(chapterID int64, drafts []ai.PanelDraft) []models.Panel {
+// It filters hallucinated or foreign asset references against the book's own
+// assets: only character ids that exist in the book are kept, and a sceneId that
+// is not one of the book's scenes is reset to 0. This prevents storing ids the
+// model invented or that belong to another book.
+func draftsToPanels(chapterID int64, drafts []ai.PanelDraft, assets ai.AssetContext) []models.Panel {
+	validChars := make(map[int64]struct{}, len(assets.Characters))
+	for _, c := range assets.Characters {
+		validChars[c.ID] = struct{}{}
+	}
+	validScenes := make(map[int64]struct{}, len(assets.Scenes))
+	for _, s := range assets.Scenes {
+		validScenes[s.ID] = struct{}{}
+	}
+
 	panels := make([]models.Panel, 0, len(drafts))
 	for _, d := range drafts {
 		panels = append(panels, models.Panel{
 			ChapterID:    chapterID,
 			Caption:      d.Caption,
-			CharacterIDs: d.CharacterIDs,
-			SceneID:      d.SceneID,
+			CharacterIDs: filterCharacterIDs(d.CharacterIDs, validChars),
+			SceneID:      filterSceneID(d.SceneID, validScenes),
 			ImagePrompt:  d.ImagePrompt,
 			Status:       pendingStatus,
 		})
 	}
 	return panels
+}
+
+// filterCharacterIDs keeps only ids present in valid, preserving order. It always
+// returns a non-nil slice so panels persist an empty array rather than null.
+func filterCharacterIDs(ids []int64, valid map[int64]struct{}) []int64 {
+	out := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := valid[id]; ok {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+// filterSceneID returns id when it is a valid scene for the book, otherwise 0.
+func filterSceneID(id int64, valid map[int64]struct{}) int64 {
+	if _, ok := valid[id]; ok {
+		return id
+	}
+	return 0
 }
 
 // mapOwnershipErr normalizes ownership-related errors from collaborators into
