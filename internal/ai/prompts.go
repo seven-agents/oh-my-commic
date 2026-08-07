@@ -83,15 +83,16 @@ func storyboardChatPrompt(assets AssetContext, panelCount int) string {
 // panels; otherwise it asks for a sensible default range. Either way, an
 // explicit count stated by the user in the conversation takes precedence.
 func panelCountInstruction(panelCount int) string {
-	var target string
 	if panelCount > 0 {
-		target = fmt.Sprintf("请把这一章拆成大约 %d 格分镜", panelCount)
-	} else {
-		target = "请把故事拆成 4~8 格分镜（除非另有要求）"
+		return fmt.Sprintf(
+			"【分镜数量-重要】你必须把这个故事拆成【恰好 %d 格】分镜，panels 数组里必须【正好包含 %d 个对象】，不能多也不能少。"+
+				"即使故事很短，也要展开成 %d 个连续的时刻（例如：开头铺垫→发展→高潮→结尾），每一格是不同的画面。"+
+				"绝对不要只输出 1 格。如果用户在对话里另外指定了格数，则以用户说的为准。",
+			panelCount, panelCount, panelCount,
+		)
 	}
-	return "请把这一章的故事拆成多格分镜，每一格是故事里不同的时刻/情节，不要只画一格。" +
-		target + "。" +
-		"如果用户在对话中明确指定了分镜格数，以用户的要求为准。"
+	return "【分镜数量】请把这个故事拆成 4~8 格连续分镜，每一格是不同的时刻/情节，" +
+		"要展开成多格，绝对不要只输出 1 格。如果用户在对话里指定了格数，以用户说的为准。"
 }
 
 // firstNonEmpty returns the first non-empty string among the arguments.
