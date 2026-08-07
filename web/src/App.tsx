@@ -4,7 +4,7 @@ import Login from './pages/Login'
 import Bookshelf from './pages/Bookshelf'
 import BookWorkspace from './pages/BookWorkspace'
 import AssetEditor from './pages/AssetEditor'
-import ChapterDetail from './pages/ChapterDetail'
+import ChapterEditor from './pages/ChapterEditor'
 import Reader from './pages/Reader'
 import NotFound from './pages/NotFound'
 import type { ReactNode } from 'react'
@@ -27,7 +27,7 @@ export default function App() {
         element={<Protected><AssetEditor /></Protected>}
       />
 
-      <Route path="/chapters/:id" element={<Protected><ChapterDetail /></Protected>} />
+      <Route path="/chapters/:id" element={<Protected><ChapterEditor /></Protected>} />
       <Route path="/read/:chapterId" element={<Protected><Reader /></Protected>} />
 
       <Route path="*" element={<NotFound />} />
