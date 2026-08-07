@@ -16,6 +16,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/seven-agents/oh-my-commic/internal/imageutil"
 	"github.com/seven-agents/oh-my-commic/internal/models"
 	"github.com/seven-agents/oh-my-commic/internal/storage"
 )
@@ -67,7 +68,7 @@ func (s *Service) run(ctx context.Context, bookID int64, srcURL, prompt string) 
 	// makes the edit request slow enough to time out. The model output stays
 	// full-resolution; only this input reference is shrunk. A decode failure
 	// falls back to the original bytes so a resize hiccup never fails comicify.
-	refBytes, refMime := resizeReference(rawBytes, mimeFromExt(ext))
+	refBytes, refMime := imageutil.ResizeForReference(rawBytes, imageutil.MimeFromExt(ext))
 	dataURI := "data:" + refMime + ";base64," + base64.StdEncoding.EncodeToString(refBytes)
 
 	remoteURL, err := s.editor.EditImage(ctx, prompt, []string{dataURI})
@@ -116,21 +117,6 @@ func (s *Service) download(ctx context.Context, remoteURL string) ([]byte, error
 		return nil, fmt.Errorf("image exceeds %d bytes", maxDownloadBytes)
 	}
 	return b, nil
-}
-
-// mimeFromExt maps a stored file extension to its image MIME type, defaulting to
-// image/png for anything unrecognized.
-func mimeFromExt(ext string) string {
-	switch ext {
-	case ".jpg", ".jpeg":
-		return "image/jpeg"
-	case ".webp":
-		return "image/webp"
-	case ".png":
-		return "image/png"
-	default:
-		return "image/png"
-	}
 }
 
 // extForBytes maps the sniffed content type of downloaded bytes to a stored

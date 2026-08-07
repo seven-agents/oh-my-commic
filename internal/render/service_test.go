@@ -38,21 +38,37 @@ var pngBytes = []byte{
 	0x42, 0x60, 0x82,
 }
 
-// fakeGen is a test ImageGenerator. It records the prompt and refs it received
-// (race-safe) and returns a preconfigured URL and error.
+// fakeGen is a test ImageGenerator implementing BOTH methods. It records the
+// prompt and refs it received (race-safe), which method was called, and returns
+// a preconfigured URL and error.
 type fakeGen struct {
-	mu     sync.Mutex
-	url    string
-	err    error
-	prompt string
-	refs   []string
-	calls  int
+	mu       sync.Mutex
+	url      string
+	err      error
+	prompt   string
+	refs     []string
+	calls    int // total calls across both methods
+	t2iCalls int // GenerateImage (text2image fallback)
+	refCalls int // RenderWithRefs (multi-image edit)
 }
 
+// GenerateImage is the text2image fallback path.
 func (g *fakeGen) GenerateImage(_ context.Context, prompt string, refs []string) (string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.calls++
+	g.t2iCalls++
+	g.prompt = prompt
+	g.refs = refs
+	return g.url, g.err
+}
+
+// RenderWithRefs is the multi-image edit path.
+func (g *fakeGen) RenderWithRefs(_ context.Context, prompt string, refs []string) (string, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.calls++
+	g.refCalls++
 	g.prompt = prompt
 	g.refs = refs
 	return g.url, g.err
@@ -68,6 +84,12 @@ func (g *fakeGen) lastRefs() []string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	return g.refs
+}
+
+func (g *fakeGen) counts() (total, t2i, ref int) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.calls, g.t2iCalls, g.refCalls
 }
 
 // renderTestEnv bundles a render.Service wired to real asset/chapter/panel
@@ -111,7 +133,7 @@ func newRenderTestEnv(t *testing.T) *renderTestEnv {
 	store := storage.Local{Root: t.TempDir()}
 
 	gen := &fakeGen{url: imgSrv.URL + "/image.png"}
-	svc := NewService(gen, panelSvc, chapterSvc, assetSvc, store, imgSrv.Client())
+	svc := NewService(gen, panelSvc, chapterSvc, assetSvc, store, imgSrv.Client(), 4)
 
 	return &renderTestEnv{
 		svc:      svc,
@@ -155,12 +177,22 @@ func (e *renderTestEnv) seedPanel(t *testing.T, userID int64) seededPanel {
 	if err != nil {
 		t.Fatalf("create book: %v", err)
 	}
+	// Store real local reference images so RenderPanel can read them back and
+	// base64-encode them (the /media URL is what buildPrompt collects).
+	charRef, err := e.store.SaveBytes(b.ID, ".png", pngBytes)
+	if err != nil {
+		t.Fatalf("save char ref: %v", err)
+	}
+	sceneRef, err := e.store.SaveBytes(b.ID, ".png", pngBytes)
+	if err != nil {
+		t.Fatalf("save scene ref: %v", err)
+	}
 	ch, err := e.assets.CreateCharacter(userID, b.ID, models.Character{
 		Name:        "小龙",
 		Gender:      "男",
 		Age:         "7",
 		Personality: "勇敢",
-		ImageURL:    "http://ref/char.png",
+		ImageURL:    charRef,
 	})
 	if err != nil {
 		t.Fatalf("create character: %v", err)
@@ -168,7 +200,7 @@ func (e *renderTestEnv) seedPanel(t *testing.T, userID int64) seededPanel {
 	sc, err := e.assets.CreateScene(userID, b.ID, models.Scene{
 		Name:        "森林",
 		Description: "阳光洒落的树林",
-		ImageURL:    "http://ref/scene.png",
+		ImageURL:    sceneRef,
 	})
 	if err != nil {
 		t.Fatalf("create scene: %v", err)
@@ -223,10 +255,118 @@ func TestRenderPanelHappyPath(t *testing.T) {
 		t.Fatalf("prompt missing character name: %q", prompt)
 	}
 
-	// Reference images from the matched character and scene are passed through.
+	// With ≥1 matched reference, the multi-image edit path must be used (not
+	// the text2image fallback).
+	total, t2i, ref := env.gen.counts()
+	if ref != 1 || t2i != 0 || total != 1 {
+		t.Fatalf("expected exactly one RenderWithRefs call, got total=%d t2i=%d ref=%d", total, t2i, ref)
+	}
+
+	// References are forwarded as base64 data: URIs (character + scene => 2).
 	refs := env.gen.lastRefs()
-	if !containsStr(refs, "http://ref/char.png") || !containsStr(refs, "http://ref/scene.png") {
-		t.Fatalf("refs should include character + scene image urls: %v", refs)
+	if len(refs) != 2 {
+		t.Fatalf("expected 2 reference data URIs (char + scene), got %d: %v", len(refs), refs)
+	}
+	for i, r := range refs {
+		if !strings.HasPrefix(r, "data:image/") || !strings.Contains(r, ";base64,") {
+			t.Fatalf("ref[%d] is not a base64 data URI: %.40q", i, r)
+		}
+	}
+}
+
+// TestRenderPanelNoRefsFallsBackToText2Image verifies a panel with no matched
+// characters or scene uses GenerateImage (text2image) rather than the edit
+// endpoint, and still completes.
+func TestRenderPanelNoRefsFallsBackToText2Image(t *testing.T) {
+	env := newRenderTestEnv(t)
+	b, err := env.books.Create(1, "书", "ghibli", "")
+	if err != nil {
+		t.Fatalf("create book: %v", err)
+	}
+	chap, err := env.chapters.CreateChapter(1, b.ID, "章")
+	if err != nil {
+		t.Fatalf("create chapter: %v", err)
+	}
+	panels, err := env.panels.ReplacePanels(1, chap.ID, []models.Panel{
+		{Caption: "空旷的天空"}, // no CharacterIDs, no SceneID
+	})
+	if err != nil {
+		t.Fatalf("replace panels: %v", err)
+	}
+
+	updated, err := env.svc.RenderPanel(context.Background(), 1, panels[0].ID)
+	if err != nil {
+		t.Fatalf("render panel: %v", err)
+	}
+	if updated.Status != "done" {
+		t.Fatalf("status should be done, got %q", updated.Status)
+	}
+	total, t2i, ref := env.gen.counts()
+	if t2i != 1 || ref != 0 || total != 1 {
+		t.Fatalf("expected exactly one GenerateImage fallback, got total=%d t2i=%d ref=%d", total, t2i, ref)
+	}
+	if len(env.gen.lastRefs()) != 0 {
+		t.Fatalf("text2image fallback should receive no refs, got %v", env.gen.lastRefs())
+	}
+}
+
+// TestRenderPanelCapsRefs verifies that when more references match than maxRefs,
+// only maxRefs data URIs are forwarded (characters first, so priority is kept).
+func TestRenderPanelCapsRefs(t *testing.T) {
+	env := newRenderTestEnv(t)
+	// Rebuild the service with a tight cap of 2 references.
+	env.svc = NewService(env.gen, env.panels, env.chapters, env.assets, env.store, env.imgSrv.Client(), 2)
+
+	b, err := env.books.Create(1, "书", "ghibli", "")
+	if err != nil {
+		t.Fatalf("create book: %v", err)
+	}
+	// Five characters, each with a stored local reference image + a scene: 6
+	// candidate refs, capped to 2.
+	charIDs := make([]int64, 0, 5)
+	for i := 0; i < 5; i++ {
+		ref, err := env.store.SaveBytes(b.ID, ".png", pngBytes)
+		if err != nil {
+			t.Fatalf("save char ref: %v", err)
+		}
+		c, err := env.assets.CreateCharacter(1, b.ID, models.Character{
+			Name:     "角色" + strconv.Itoa(i),
+			ImageURL: ref,
+		})
+		if err != nil {
+			t.Fatalf("create character: %v", err)
+		}
+		charIDs = append(charIDs, c.ID)
+	}
+	sceneRef, err := env.store.SaveBytes(b.ID, ".png", pngBytes)
+	if err != nil {
+		t.Fatalf("save scene ref: %v", err)
+	}
+	sc, err := env.assets.CreateScene(1, b.ID, models.Scene{Name: "场景", ImageURL: sceneRef})
+	if err != nil {
+		t.Fatalf("create scene: %v", err)
+	}
+	chap, err := env.chapters.CreateChapter(1, b.ID, "章")
+	if err != nil {
+		t.Fatalf("create chapter: %v", err)
+	}
+	panels, err := env.panels.ReplacePanels(1, chap.ID, []models.Panel{
+		{Caption: "众人集合", CharacterIDs: charIDs, SceneID: sc.ID},
+	})
+	if err != nil {
+		t.Fatalf("replace panels: %v", err)
+	}
+
+	if _, err := env.svc.RenderPanel(context.Background(), 1, panels[0].ID); err != nil {
+		t.Fatalf("render panel: %v", err)
+	}
+	refs := env.gen.lastRefs()
+	if len(refs) != 2 {
+		t.Fatalf("expected refs capped to 2, got %d", len(refs))
+	}
+	_, t2i, ref := env.gen.counts()
+	if ref != 1 || t2i != 0 {
+		t.Fatalf("expected RenderWithRefs path, got t2i=%d ref=%d", t2i, ref)
 	}
 }
 
@@ -294,14 +434,4 @@ func TestRenderPanelUnknown(t *testing.T) {
 	if _, err := env.svc.RenderPanel(context.Background(), 1, 999); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("unknown panel render should return ErrNotFound, got %v", err)
 	}
-}
-
-// containsStr reports whether want appears in list.
-func containsStr(list []string, want string) bool {
-	for _, s := range list {
-		if s == want {
-			return true
-		}
-	}
-	return false
 }

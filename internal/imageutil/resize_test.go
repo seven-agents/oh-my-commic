@@ -1,4 +1,4 @@
-package comicify
+package imageutil
 
 import (
 	"bytes"
@@ -26,9 +26,9 @@ func makePNG(t *testing.T, w, h int) []byte {
 	return buf.Bytes()
 }
 
-func TestResizeReferenceDownscalesLargeImage(t *testing.T) {
+func TestResizeForReferenceDownscalesLargeImage(t *testing.T) {
 	raw := makePNG(t, 1600, 1200)
-	out, mime := resizeReference(raw, "image/png")
+	out, mime := ResizeForReference(raw, "image/png")
 
 	if mime != "image/jpeg" {
 		t.Fatalf("expected downscaled mime image/jpeg, got %s", mime)
@@ -56,9 +56,9 @@ func TestResizeReferenceDownscalesLargeImage(t *testing.T) {
 	}
 }
 
-func TestResizeReferenceLeavesSmallImageUntouched(t *testing.T) {
+func TestResizeForReferenceLeavesSmallImageUntouched(t *testing.T) {
 	raw := makePNG(t, 300, 300)
-	out, mime := resizeReference(raw, "image/png")
+	out, mime := ResizeForReference(raw, "image/png")
 
 	if mime != "image/png" {
 		t.Fatalf("expected original mime image/png, got %s", mime)
@@ -68,9 +68,9 @@ func TestResizeReferenceLeavesSmallImageUntouched(t *testing.T) {
 	}
 }
 
-func TestResizeReferenceFallsBackOnUndecodable(t *testing.T) {
+func TestResizeForReferenceFallsBackOnUndecodable(t *testing.T) {
 	raw := []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0}
-	out, mime := resizeReference(raw, "image/png")
+	out, mime := ResizeForReference(raw, "image/png")
 
 	if mime != "image/png" {
 		t.Fatalf("expected fallback mime image/png, got %s", mime)
@@ -80,9 +80,9 @@ func TestResizeReferenceFallsBackOnUndecodable(t *testing.T) {
 	}
 }
 
-func TestResizeReferencePortraitPinsHeight(t *testing.T) {
+func TestResizeForReferencePortraitPinsHeight(t *testing.T) {
 	raw := makePNG(t, 1000, 2000)
-	out, _ := resizeReference(raw, "image/png")
+	out, _ := ResizeForReference(raw, "image/png")
 
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(out))
 	if err != nil {
@@ -93,5 +93,21 @@ func TestResizeReferencePortraitPinsHeight(t *testing.T) {
 	}
 	if cfg.Width > maxRefDimension {
 		t.Fatalf("width %d exceeds cap", cfg.Width)
+	}
+}
+
+func TestMimeFromExt(t *testing.T) {
+	cases := map[string]string{
+		".png":  "image/png",
+		".jpg":  "image/jpeg",
+		".jpeg": "image/jpeg",
+		".webp": "image/webp",
+		".gif":  "image/png", // unrecognized -> default png
+		"":      "image/png",
+	}
+	for ext, want := range cases {
+		if got := MimeFromExt(ext); got != want {
+			t.Fatalf("MimeFromExt(%q) = %q, want %q", ext, got, want)
+		}
 	}
 }

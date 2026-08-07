@@ -13,14 +13,17 @@ package render
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 
 	"github.com/seven-agents/oh-my-commic/internal/asset"
 	"github.com/seven-agents/oh-my-commic/internal/chapter"
+	"github.com/seven-agents/oh-my-commic/internal/imageutil"
 	"github.com/seven-agents/oh-my-commic/internal/models"
 	"github.com/seven-agents/oh-my-commic/internal/panel"
 	"github.com/seven-agents/oh-my-commic/internal/storage"
@@ -45,12 +48,20 @@ const statusRendering = "rendering"
 // statusFailed marks a panel whose image generation failed.
 const statusFailed = "failed"
 
-// ImageGenerator produces a remote image URL from a prompt and optional
-// reference image URLs. It is satisfied by *ai.Client. The Service depends on
-// this narrow interface (defined where it is used) so tests can inject a fake
-// generator without any real network calls.
+// defaultMaxRefs caps reference images per render when NewService is given a
+// non-positive maxRefs (defensive fallback so the model is never over-fed).
+const defaultMaxRefs = 4
+
+// ImageGenerator produces a remote image URL from a prompt. It is satisfied by
+// *ai.Client. The Service depends on this narrow interface (defined where it is
+// used) so tests can inject a fake without any real network calls.
+//
+// GenerateImage is the text2image fallback (no usable reference images).
+// RenderWithRefs is the multi-image edit path: refImageDataURIs are base64
+// data: URIs of the matched characters/scene, driving visual consistency.
 type ImageGenerator interface {
 	GenerateImage(ctx context.Context, prompt string, refImageURLs []string) (string, error)
+	RenderWithRefs(ctx context.Context, prompt string, refImageDataURIs []string) (string, error)
 }
 
 // Service orchestrates the render-one-panel flow.
@@ -61,10 +72,13 @@ type Service struct {
 	assets   *asset.Service
 	store    storage.Local
 	http     *http.Client
+	maxRefs  int
 }
 
 // NewService wires a Service to its collaborators. httpClient is used only to
 // download the generated image; callers should set a sane timeout on it.
+// maxRefs caps how many reference images are forwarded to the multi-image edit
+// model; a non-positive value falls back to defaultMaxRefs.
 func NewService(
 	gen ImageGenerator,
 	panels *panel.Service,
@@ -72,7 +86,11 @@ func NewService(
 	assets *asset.Service,
 	store storage.Local,
 	httpClient *http.Client,
+	maxRefs int,
 ) *Service {
+	if maxRefs <= 0 {
+		maxRefs = defaultMaxRefs
+	}
 	return &Service{
 		gen:      gen,
 		panels:   panels,
@@ -80,6 +98,7 @@ func NewService(
 		assets:   assets,
 		store:    store,
 		http:     httpClient,
+		maxRefs:  maxRefs,
 	}
 }
 
@@ -118,7 +137,19 @@ func (s *Service) RenderPanel(ctx context.Context, userID, panelID int64) (model
 		return models.Panel{}, fmt.Errorf("render panel %d: set rendering: %w", panelID, err)
 	}
 
-	remoteURL, err := s.gen.GenerateImage(ctx, prompt, refs)
+	// Convert the local reference URLs into base64 data URIs the model can
+	// consume (DashScope cannot reach our /media host). Characters come first in
+	// refs, scene last, so a simple slice cap preserves character priority.
+	dataURIs := s.refDataURIs(refs)
+
+	var remoteURL string
+	if len(dataURIs) > 0 {
+		remoteURL, err = s.gen.RenderWithRefs(ctx, prompt, dataURIs)
+	} else {
+		// No usable reference image: the edit endpoint requires an input image,
+		// so fall back to text2image.
+		remoteURL, err = s.gen.GenerateImage(ctx, prompt, nil)
+	}
 	if err != nil {
 		s.markFailed(userID, panelID)
 		return models.Panel{}, fmt.Errorf("render panel %d: generate image: %w", panelID, err)
@@ -149,6 +180,29 @@ func (s *Service) RenderPanel(ctx context.Context, userID, panelID int64) (model
 // must not have it masked by a secondary status-write error.
 func (s *Service) markFailed(userID, panelID int64) {
 	_, _ = s.panels.SetPanelStatus(userID, panelID, statusFailed)
+}
+
+// refDataURIs reads each local reference URL, downscales it, and encodes it as a
+// base64 data URI suitable for the multi-image edit model. A reference that
+// cannot be read is skipped (logged, not fatal) so one bad asset never aborts
+// the whole render. The result is capped at s.maxRefs, preserving input order
+// (characters first, scene last) so character consistency is prioritized.
+func (s *Service) refDataURIs(refs []string) []string {
+	out := make([]string, 0, len(refs))
+	for _, url := range refs {
+		if len(out) >= s.maxRefs {
+			break
+		}
+		raw, ext, err := s.store.ReadByURL(url)
+		if err != nil {
+			// Skip an unreadable reference rather than failing the render.
+			log.Printf("render: skip unreadable reference image: %v", err)
+			continue
+		}
+		resized, mime := imageutil.ResizeForReference(raw, imageutil.MimeFromExt(ext))
+		out = append(out, "data:"+mime+";base64,"+base64.StdEncoding.EncodeToString(resized))
+	}
+	return out
 }
 
 // buildPrompt loads the book's characters and scenes, selects the ones matched

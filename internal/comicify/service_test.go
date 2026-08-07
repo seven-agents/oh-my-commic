@@ -1,7 +1,11 @@
 package comicify
 
 import (
+	"bytes"
 	"context"
+	"image"
+	"image/color"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,6 +18,23 @@ import (
 // pngBytes is a minimal payload that http.DetectContentType classifies as PNG
 // (the 8-byte PNG signature is sufficient).
 var pngBytes = []byte{0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0, 0, 0, 0}
+
+// makePNG builds an in-memory PNG of the given dimensions (so the encoder does
+// real work) used to exercise the large-reference downscale path.
+func makePNG(t *testing.T, w, h int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, w, h))
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			img.Set(x, y, color.RGBA{R: uint8(x % 256), G: uint8(y % 256), B: 128, A: 255})
+		}
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("encode png: %v", err)
+	}
+	return buf.Bytes()
+}
 
 // fakeEditor records the prompt + refs it was called with and returns a fixed
 // remote URL (pointing at the test image server).

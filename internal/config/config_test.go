@@ -32,6 +32,8 @@ func TestLoadOverridesAndDefaults(t *testing.T) {
 	defer os.Unsetenv("PORT")
 	os.Unsetenv("QWEN_IMAGE_MODEL")
 	os.Unsetenv("QWEN_EDIT_MODEL")
+	os.Unsetenv("QWEN_RENDER_MODEL")
+	os.Unsetenv("QWEN_RENDER_MAX_REFS")
 
 	c, err := Load()
 	if err != nil {
@@ -52,10 +54,43 @@ func TestLoadOverridesAndDefaults(t *testing.T) {
 	if c.EditModel != "qwen-image-edit" {
 		t.Fatalf("default EditModel wrong: %s", c.EditModel)
 	}
+	if c.RenderModel != "qwen-image-edit-plus" {
+		t.Fatalf("default RenderModel wrong: %s", c.RenderModel)
+	}
+	if c.RenderMaxRefs != 4 {
+		t.Fatalf("default RenderMaxRefs wrong: %d", c.RenderMaxRefs)
+	}
 	if c.TextBaseURL != "https://dashscope.aliyuncs.com/compatible-mode/v1" {
 		t.Fatalf("default TextBaseURL wrong: %s", c.TextBaseURL)
 	}
 	if c.ImageBaseURL != "https://dashscope.aliyuncs.com/api/v1" {
 		t.Fatalf("default ImageBaseURL wrong: %s", c.ImageBaseURL)
 	}
+}
+
+func TestLoadRenderMaxRefs(t *testing.T) {
+	os.Setenv("DASHSCOPE_API_KEY", "sk-test")
+
+	// Valid override is parsed.
+	os.Setenv("QWEN_RENDER_MAX_REFS", "6")
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.RenderMaxRefs != 6 {
+		t.Fatalf("override RenderMaxRefs wrong: %d", c.RenderMaxRefs)
+	}
+
+	// Invalid / non-positive values fall back to the default.
+	for _, bad := range []string{"abc", "0", "-2", ""} {
+		os.Setenv("QWEN_RENDER_MAX_REFS", bad)
+		c, err := Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if c.RenderMaxRefs != 4 {
+			t.Fatalf("RenderMaxRefs for %q should fall back to 4, got %d", bad, c.RenderMaxRefs)
+		}
+	}
+	os.Unsetenv("QWEN_RENDER_MAX_REFS")
 }

@@ -58,7 +58,10 @@ func main() {
 		TextModel:    cfg.TextModel,
 		ImageModel:   cfg.ImageModel,
 		EditModel:    cfg.EditModel,
-		HTTP:         &http.Client{Timeout: 60 * time.Second},
+		RenderModel:  cfg.RenderModel,
+		// Multi-image edits (panel render) can take 30-60s+; a 60s request
+		// timeout is too tight, so allow 120s for the AI client itself.
+		HTTP: &http.Client{Timeout: 120 * time.Second},
 	}
 
 	// Comic-ification downloads the produced image from a remote URL and can take
@@ -82,6 +85,7 @@ func main() {
 	renderSvc := render.NewService(
 		aiClient, panelSvc, chapterSvc, assetSvc, media,
 		&http.Client{Timeout: 120 * time.Second},
+		cfg.RenderMaxRefs,
 	)
 	renderHandler := render.NewHandler(renderSvc)
 
