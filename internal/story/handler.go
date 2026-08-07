@@ -1,0 +1,144 @@
+package story
+
+import (
+	"encoding/json"
+	"errors"
+	"net/http"
+	"strconv"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/seven-agents/oh-my-commic/internal/ai"
+	"github.com/seven-agents/oh-my-commic/internal/auth"
+)
+
+// defaultPanelCount is used when the request omits or under-specifies panelCount.
+const defaultPanelCount = 6
+
+// Handler serves the storyboard conversation and generation endpoints on top of
+// a Service. It resolves the authenticated user from the request context
+// (populated upstream by auth.RequireUser) and never trusts a client user ID.
+type Handler struct {
+	svc *Service
+}
+
+// NewHandler returns a Handler backed by svc.
+func NewHandler(svc *Service) *Handler {
+	return &Handler{svc: svc}
+}
+
+// Mount registers the story endpoints onto r using their absolute paths.
+//
+//	POST /api/chapters/{id}/converse
+//	POST /api/chapters/{id}/storyboard
+//
+// Like the sibling handlers, it does not attach auth.RequireUser: the caller
+// mounts these inside a group already wrapped with RequireUser.
+func (h *Handler) Mount(r chi.Router) {
+	r.Post("/api/chapters/{id}/converse", h.Converse)
+	r.Post("/api/chapters/{id}/storyboard", h.Storyboard)
+}
+
+// converseRequest is the body for POST /api/chapters/{id}/converse.
+type converseRequest struct {
+	Messages []ai.Msg `json:"messages"`
+}
+
+// storyboardRequest is the body for POST /api/chapters/{id}/storyboard.
+type storyboardRequest struct {
+	Messages   []ai.Msg `json:"messages"`
+	PanelCount int      `json:"panelCount"`
+}
+
+// Converse handles POST /api/chapters/{id}/converse.
+func (h *Handler) Converse(w http.ResponseWriter, r *http.Request) {
+	userID := auth.UserID(r.Context())
+	chapterID, ok := parseID(w, r)
+	if !ok {
+		return
+	}
+
+	var req converseRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	reply, err := h.svc.Converse(userID, chapterID, req.Messages)
+	if err != nil {
+		writeStoryError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"reply": reply})
+}
+
+// Storyboard handles POST /api/chapters/{id}/storyboard.
+func (h *Handler) Storyboard(w http.ResponseWriter, r *http.Request) {
+	userID := auth.UserID(r.Context())
+	chapterID, ok := parseID(w, r)
+	if !ok {
+		return
+	}
+
+	var req storyboardRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+
+	n := req.PanelCount
+	if n <= 0 {
+		n = defaultPanelCount
+	}
+
+	panels, err := h.svc.GenerateStoryboard(userID, chapterID, req.Messages, n)
+	if err != nil {
+		writeStoryError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, panels)
+}
+
+// parseID reads the positive integer chapter id path parameter. On a missing or
+// non-positive value it writes a 400 response and returns ok=false.
+func parseID(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	id, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, "无效的章节 ID")
+		return 0, false
+	}
+	return id, true
+}
+
+// decodeJSON parses the JSON request body into dst. On malformed input it writes
+// a 400 response and returns ok=false.
+func decodeJSON(w http.ResponseWriter, r *http.Request, dst any) bool {
+	if err := json.NewDecoder(r.Body).Decode(dst); err != nil {
+		writeError(w, http.StatusBadRequest, "请求格式错误")
+		return false
+	}
+	return true
+}
+
+// writeStoryError maps a service error to an HTTP response: ErrNotFound becomes
+// 404, and any other error (e.g. an upstream AI failure) becomes a 502 with a
+// generic message so the API key and raw upstream body are never leaked.
+func writeStoryError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrNotFound):
+		writeError(w, http.StatusNotFound, "资源不存在")
+	default:
+		writeError(w, http.StatusBadGateway, "AI 服务暂时不可用，请稍后再试")
+	}
+}
+
+// writeJSON encodes v as a JSON response with the given status code.
+func writeJSON(w http.ResponseWriter, code int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// writeError writes a JSON error envelope. The message must never contain
+// sensitive internal detail.
+func writeError(w http.ResponseWriter, code int, msg string) {
+	writeJSON(w, code, map[string]string{"error": msg})
+}

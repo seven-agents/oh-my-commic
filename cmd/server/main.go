@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
+	"github.com/seven-agents/oh-my-commic/internal/ai"
 	"github.com/seven-agents/oh-my-commic/internal/asset"
 	"github.com/seven-agents/oh-my-commic/internal/auth"
 	"github.com/seven-agents/oh-my-commic/internal/book"
@@ -17,6 +19,7 @@ import (
 	"github.com/seven-agents/oh-my-commic/internal/httpx"
 	"github.com/seven-agents/oh-my-commic/internal/panel"
 	"github.com/seven-agents/oh-my-commic/internal/storage"
+	"github.com/seven-agents/oh-my-commic/internal/story"
 )
 
 func main() {
@@ -55,6 +58,17 @@ func main() {
 	panelSvc := panel.NewService(panel.NewRepo(d), chapterSvc)
 	panelHandler := panel.NewHandler(panelSvc)
 
+	aiClient := &ai.Client{
+		Key:          cfg.DashScopeKey,
+		TextBaseURL:  cfg.TextBaseURL,
+		ImageBaseURL: cfg.ImageBaseURL,
+		TextModel:    cfg.TextModel,
+		ImageModel:   cfg.ImageModel,
+		HTTP:         &http.Client{Timeout: 60 * time.Second},
+	}
+	storySvc := story.NewService(aiClient, assetSvc, chapterSvc, panelSvc)
+	storyHandler := story.NewHandler(storySvc)
+
 	router := httpx.NewRouter(httpx.Deps{
 		Session: sess,
 		Auth:    authHandler,
@@ -62,6 +76,7 @@ func main() {
 		Asset:   assetHandler,
 		Chapter: chapterHandler,
 		Panel:   panelHandler,
+		Story:   storyHandler,
 		Media:   media.Handler(),
 	})
 
