@@ -63,7 +63,12 @@ func (s *Service) run(ctx context.Context, bookID int64, srcURL, prompt string) 
 		return "", fmt.Errorf("comicify: read source: %w", err)
 	}
 
-	dataURI := "data:" + mimeFromExt(ext) + ";base64," + base64.StdEncoding.EncodeToString(rawBytes)
+	// Downscale the reference before base64/EditImage: a full-resolution upload
+	// makes the edit request slow enough to time out. The model output stays
+	// full-resolution; only this input reference is shrunk. A decode failure
+	// falls back to the original bytes so a resize hiccup never fails comicify.
+	refBytes, refMime := resizeReference(rawBytes, mimeFromExt(ext))
+	dataURI := "data:" + refMime + ";base64," + base64.StdEncoding.EncodeToString(refBytes)
 
 	remoteURL, err := s.editor.EditImage(ctx, prompt, []string{dataURI})
 	if err != nil {
