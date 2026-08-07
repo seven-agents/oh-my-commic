@@ -7,7 +7,7 @@ import { ChatStoryboard } from '../components/ChatStoryboard'
 import { PanelGrid } from '../components/PanelGrid'
 import { ComicCompose } from '../components/ComicCompose'
 import { useChapterData } from '../components/chapter/useChapterData'
-import type { Chapter, ChapterStatus } from '../api/types'
+import type { Chapter, ChapterStatus, Panel } from '../api/types'
 
 // 章节状态 → 初始步骤。
 function stageFromStatus(status: ChapterStatus): Stage {
@@ -23,6 +23,9 @@ export default function ChapterEditor() {
 
   const { chapter, panels, index, loading, error, setPanels, setChapter } =
     useChapterData(chapterId)
+
+  // 对话式分镜每轮返回全量分镜，直接替换本地状态。
+  const replacePanels = (next: Panel[]) => setPanels(next)
   const [stage, setStage] = useState<Stage>(1)
 
   useEffect(() => {
@@ -32,8 +35,8 @@ export default function ChapterEditor() {
   // 已解锁的最大步骤：随章节进度推进，用户可回退。
   const maxReached: Stage = chapter ? stageFromStatus(chapter.status) : 1
 
-  const goStoryboard = (nextPanels: typeof panels) => {
-    setPanels(nextPanels)
+  // Stage ① 确认分镜：分镜已在每轮对话中持久化，这里只推进步骤。
+  const confirmStoryboard = () => {
     if (chapter) setChapter({ ...chapter, status: 'storyboarding' })
     setStage(2)
   }
@@ -80,7 +83,13 @@ export default function ChapterEditor() {
             <Stepper current={stage} maxReached={maxReached} onGo={setStage} />
 
             {stage === 1 && (
-              <ChatStoryboard chapterId={chapterId} onStoryboard={goStoryboard} />
+              <ChatStoryboard
+                chapterId={chapterId}
+                panels={panels}
+                index={index}
+                onPanelsChange={replacePanels}
+                onConfirm={confirmStoryboard}
+              />
             )}
             {stage === 2 && (
               <PanelGrid

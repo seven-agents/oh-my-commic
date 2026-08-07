@@ -24,11 +24,15 @@ export function PanelGrid({ panels, index, onPanelsChange, onNext }: PanelGridPr
 
   const savePanel = async (panel: Panel, patch: Partial<Panel>) => {
     setError('')
+    const merged = { ...panel, ...patch }
     const body = {
-      caption: patch.caption ?? panel.caption,
-      characterIds: patch.characterIds ?? panel.characterIds,
-      sceneId: patch.sceneId ?? panel.sceneId,
-      imagePrompt: patch.imagePrompt ?? panel.imagePrompt,
+      caption: merged.caption,
+      characterIds: merged.characterIds,
+      sceneId: merged.sceneId,
+      imagePrompt: merged.imagePrompt,
+      location: merged.location,
+      event: merged.event,
+      charExpressions: merged.charExpressions,
     }
     try {
       const saved = await api.put<Panel>(`/api/panels/${panel.id}`, body)

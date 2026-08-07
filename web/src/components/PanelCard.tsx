@@ -34,6 +34,10 @@ export function PanelCard({ panel, index, onSaveCaption, onRemoveActor, onRender
 
       <PanelImage panel={panel} onRender={onRender} />
 
+      {panel.location && (
+        <p className="px-1 text-xs font-semibold text-ink-soft">📍 {panel.location}</p>
+      )}
+
       <textarea
         value={caption}
         onChange={(e) => setCaption(e.target.value)}
@@ -51,6 +55,9 @@ export function PanelCard({ panel, index, onSaveCaption, onRemoveActor, onRender
               className="inline-flex items-center gap-1 rounded-full bg-sky/20 px-2.5 py-1 text-xs font-semibold text-sky-deep"
             >
               {a.emoji} {a.name}
+              {panel.charExpressions?.[a.id] && (
+                <span className="font-normal text-sky-deep/70">（{panel.charExpressions[a.id]}）</span>
+              )}
               <button
                 type="button"
                 onClick={() => onRemoveActor(a.id)}
