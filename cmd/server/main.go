@@ -15,6 +15,7 @@ import (
 	"github.com/seven-agents/oh-my-commic/internal/config"
 	"github.com/seven-agents/oh-my-commic/internal/db"
 	"github.com/seven-agents/oh-my-commic/internal/httpx"
+	"github.com/seven-agents/oh-my-commic/internal/panel"
 	"github.com/seven-agents/oh-my-commic/internal/storage"
 )
 
@@ -51,12 +52,16 @@ func main() {
 	chapterSvc := chapter.NewService(chapter.NewRepo(d), bookRepo)
 	chapterHandler := chapter.NewHandler(chapterSvc)
 
+	panelSvc := panel.NewService(panel.NewRepo(d), chapterSvc)
+	panelHandler := panel.NewHandler(panelSvc)
+
 	router := httpx.NewRouter(httpx.Deps{
 		Session: sess,
 		Auth:    authHandler,
 		Book:    bookHandler,
 		Asset:   assetHandler,
 		Chapter: chapterHandler,
+		Panel:   panelHandler,
 		Media:   media.Handler(),
 	})
 

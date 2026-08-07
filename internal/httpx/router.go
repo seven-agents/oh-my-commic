@@ -10,6 +10,7 @@ import (
 	"github.com/seven-agents/oh-my-commic/internal/auth"
 	"github.com/seven-agents/oh-my-commic/internal/book"
 	"github.com/seven-agents/oh-my-commic/internal/chapter"
+	"github.com/seven-agents/oh-my-commic/internal/panel"
 )
 
 // Deps aggregates the dependencies NewRouter needs to compose the HTTP surface.
@@ -29,6 +30,9 @@ type Deps struct {
 	// Chapter mounts the per-book chapter routes (CRUD + status state machine,
 	// behind RequireUser). Optional: nil disables chapter routes.
 	Chapter *chapter.Handler
+	// Panel mounts the per-chapter panel routes (list + bulk replace + edit,
+	// behind RequireUser). Optional: nil disables panel routes.
+	Panel *panel.Handler
 	// Media serves stored assets under /media/*.
 	Media http.Handler
 }
@@ -59,6 +63,9 @@ func NewRouter(deps Deps) http.Handler {
 		}
 		if deps.Chapter != nil {
 			deps.Chapter.Mount(pr)
+		}
+		if deps.Panel != nil {
+			deps.Panel.Mount(pr)
 		}
 	})
 
