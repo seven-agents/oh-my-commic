@@ -53,33 +53,58 @@ User
 | 前端 | React + Vite + TypeScript + Tailwind (SPA) |
 | 后端 | Go + chi，分层 handler → service → repository |
 | 存储 | SQLite + 本地图片目录 |
-| AI | 通义千问 DashScope：文本 `qwen` + 生图 `wan2.7-image-pro` |
+| AI | 通义千问 DashScope：文本 `qwen-plus` + 生图 `wan2.2-t2i-plus` |
 
 ## 🚀 快速开始
 
-> 尚未搭建，脚手架完成后补全。占位如下：
+先配置环境变量（两种模式都需要）：
 
 ```bash
-# 1. 配置环境变量
 cp .env.example .env
-#   在 .env 填入 DASHSCOPE_API_KEY
+#   在 .env 填入 DASHSCOPE_API_KEY（通义千问 Key）
+```
 
-# 2. 启动后端
+### 一键 demo（单服务，推荐面试演示）
+
+前端先构建成静态文件，Go 服务同时托管 **SPA + API + 图片**，一个端口搞定：
+
+```bash
+cd web && npm install && npm run build && cd ..
+go run ./cmd/server
+```
+
+打开 http://localhost:8080 —— 前端页面、`/api/*`、`/media/*` 全部由这一个进程提供。
+（服务启动时检测到 `web/dist/index.html` 便自动开启 SPA 托管；找不到则退回 API-only 模式。）
+
+### 开发模式（前后端分离，热更新）
+
+两个终端，前端走 Vite 热更新、通过代理把 `/api`、`/media` 打到 :8080：
+
+```bash
+# 终端 1：后端
 go run ./cmd/server
 
-# 3. 启动前端
+# 终端 2：前端（Vite dev server）
 cd web && npm install && npm run dev
 ```
 
+打开 http://localhost:5173 开发（Vite 已配置 `/api`、`/media` 代理到 `http://localhost:8080`）。
+
 ## 🔐 环境变量
 
-| 变量 | 说明 |
-|---|---|
-| `DASHSCOPE_API_KEY` | 通义千问 DashScope API Key（**只放 .env，勿提交**） |
-| `QWEN_TEXT_MODEL` | 文本模型 id，默认 `qwen-plus` |
-| `QWEN_IMAGE_MODEL` | 生图模型 id，默认 `wan2.7-image-pro` |
+| 变量 | 说明 | 默认值 |
+|---|---|---|
+| `DASHSCOPE_API_KEY` | 通义千问 DashScope API Key（**必填，只放 .env，勿提交**） | — |
+| `PORT` | 服务监听端口 | `8080` |
+| `DB_PATH` | SQLite 文件路径 | `oh-my-commic.db` |
+| `DATA_DIR` | 上传/生成图片的本地存储目录 | `data` |
+| `WEB_DIST` | 前端构建产物目录（存在 `index.html` 时开启 SPA 托管） | `web/dist` |
+| `QWEN_TEXT_MODEL` | 文本模型 id | `qwen-plus` |
+| `QWEN_IMAGE_MODEL` | 生图模型 id | `wan2.2-t2i-plus` |
+| `QWEN_TEXT_BASE_URL` | 文本接口 base url | DashScope 兼容模式 |
+| `QWEN_IMAGE_BASE_URL` | 生图接口 base url | DashScope 原生 |
 
-> ⚠️ 切勿把 API key 提交到 git。`.env` 已在 `.gitignore` 中排除。
+> ⚠️ 切勿把 API key 提交到 git。`.env`、`*.db`、`web/dist/`、`web/node_modules/` 均已在 `.gitignore` 中排除。
 
 ## 📦 项目结构（规划）
 
@@ -99,6 +124,10 @@ oh-my-commic/
 └── .env                 # 本地密钥(gitignored)
 ```
 
+## 🎬 演示脚本
+
+3 分钟面试演示走位见 [`docs/DEMO.md`](docs/DEMO.md)。
+
 ## 📅 状态
 
-设计阶段完成 ✅ · 脚手架进行中 🚧
+前后端打通 ✅ · 单服务一键 demo 可运行 ✅

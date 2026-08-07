@@ -3,6 +3,7 @@ package httpx
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -43,6 +44,11 @@ type Deps struct {
 	Render *render.Handler
 	// Media serves stored assets under /media/*.
 	Media http.Handler
+	// Static serves the built single-page frontend for any non-API, non-media
+	// path, falling back to index.html for client-side routes. Optional: nil
+	// disables SPA serving entirely (the server then behaves as an API-only
+	// backend, as in tests). Build one with NewSPAHandler.
+	Static http.Handler
 }
 
 // NewRouter builds the application router from deps.
@@ -85,6 +91,20 @@ func NewRouter(deps Deps) http.Handler {
 
 	if deps.Media != nil {
 		r.Handle("/media/*", deps.Media)
+	}
+
+	// SPA serving. When a static handler is configured, mount it as the
+	// catch-all for everything that did not match an /api/* or /media/* route
+	// above. Unknown /api/* paths are explicitly short-circuited to a JSON 404
+	// so client-side routing never masks a real API mistake with index.html.
+	if deps.Static != nil {
+		r.NotFound(func(w http.ResponseWriter, req *http.Request) {
+			if strings.HasPrefix(req.URL.Path, "/api/") {
+				writeJSON(w, http.StatusNotFound, map[string]string{"error": "not found"})
+				return
+			}
+			deps.Static.ServeHTTP(w, req)
+		})
 	}
 
 	return r

@@ -17,6 +17,7 @@ oh-my-commic
 web/node_modules/
 web/dist/
 node_modules/
+*.tsbuildinfo
 
 # Uploaded / generated media (local storage)
 /data/
