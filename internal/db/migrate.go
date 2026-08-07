@@ -68,6 +68,12 @@ var schemaStatements = []string{
   status TEXT NOT NULL DEFAULT 'pending',
   FOREIGN KEY (chapter_id) REFERENCES chapters(id) ON DELETE CASCADE
 )`,
+	`CREATE TABLE IF NOT EXISTS sessions (
+  token TEXT PRIMARY KEY,
+  user_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+)`,
 }
 
 // Migrate creates all application tables if they do not already exist. It is

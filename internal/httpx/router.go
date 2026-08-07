@@ -61,6 +61,10 @@ type Deps struct {
 func NewRouter(deps Deps) http.Handler {
 	r := chi.NewRouter()
 
+	// Log every request first so 404s and errors from any downstream handler
+	// (including the SPA/static catch-all) are visible in the server log.
+	r.Use(requestLogger)
+
 	r.Get("/api/health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})

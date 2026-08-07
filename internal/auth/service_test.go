@@ -18,7 +18,7 @@ func newTestService(t *testing.T) *Service {
 	}
 	t.Cleanup(func() { d.Close() })
 
-	return NewService(NewUserRepo(d), NewSession())
+	return NewService(NewUserRepo(d), NewSession(nil))
 }
 
 func TestRegisterLogin(t *testing.T) {

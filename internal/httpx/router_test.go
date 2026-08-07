@@ -24,7 +24,7 @@ func newTestRouter(t *testing.T) http.Handler {
 	}
 	t.Cleanup(func() { d.Close() })
 
-	sess := auth.NewSession()
+	sess := auth.NewSession(nil)
 	authHandler := auth.NewHandler(auth.NewService(auth.NewUserRepo(d), sess))
 	bookHandler := book.NewHandler(book.NewService(book.NewRepo(d)))
 

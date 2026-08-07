@@ -8,7 +8,7 @@ import (
 )
 
 func TestRequireUser(t *testing.T) {
-	sess := NewSession()
+	sess := NewSession(nil)
 	tok := sess.Issue(42)
 	var seen int64
 	h := RequireUser(sess)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -32,7 +32,7 @@ func TestRequireUser(t *testing.T) {
 }
 
 func TestRequireUserInvalidToken(t *testing.T) {
-	sess := NewSession()
+	sess := NewSession(nil)
 	called := false
 	h := RequireUser(sess)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		called = true
