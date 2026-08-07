@@ -1,0 +1,28 @@
+# Secrets
+.env
+.env.local
+
+# Go
+/bin/
+*.exe
+*.out
+oh-my-commic
+
+# SQLite
+*.db
+*.sqlite
+*.sqlite3
+
+# Node / frontend
+web/node_modules/
+web/dist/
+node_modules/
+
+# Uploaded / generated media (local storage)
+/data/
+/uploads/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
