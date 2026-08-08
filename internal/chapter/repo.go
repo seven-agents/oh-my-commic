@@ -8,8 +8,10 @@ package chapter
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/seven-agents/oh-my-commic/internal/models"
 )
@@ -29,7 +31,7 @@ const statusDraft = "draft"
 // chapterColumns is the ordered column list used by every chapter SELECT so the
 // scan order stays in sync with scanChapter. "order" is a SQL reserved word and
 // is always quoted.
-const chapterColumns = `id, book_id, "order", title, status, summary, is_cover, created_at`
+const chapterColumns = `id, book_id, "order", title, status, summary, is_cover, conversation, panel_count, created_at`
 
 // coverTitle is the fixed title assigned to a book's cover chapter.
 const coverTitle = "封面"
@@ -191,6 +193,32 @@ func (r *Repo) SetSummary(id int64, summary string) (models.Chapter, error) {
 	return r.Get(id)
 }
 
+// SetConversation overwrites the persisted storyboard-chat conversation and the
+// target panel_count of the chapter with id, returning the refreshed row. conv
+// is serialized to a JSON array TEXT. It returns ErrNotFound if no such chapter
+// exists. Ownership is the Service's responsibility.
+func (r *Repo) SetConversation(id int64, conv []models.ConversationMsg, panelCount int) (models.Chapter, error) {
+	convJSON, err := marshalConversation(conv)
+	if err != nil {
+		return models.Chapter{}, fmt.Errorf("set conversation for chapter %d: %w", id, err)
+	}
+	res, err := r.db.Exec(
+		`UPDATE chapters SET conversation = ?, panel_count = ? WHERE id = ?`,
+		convJSON, panelCount, id,
+	)
+	if err != nil {
+		return models.Chapter{}, fmt.Errorf("set conversation for chapter %d: %w", id, err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return models.Chapter{}, fmt.Errorf("set conversation for chapter %d: rows affected: %w", id, err)
+	}
+	if affected == 0 {
+		return models.Chapter{}, ErrNotFound
+	}
+	return r.Get(id)
+}
+
 // Delete removes the chapter with id. It returns ErrNotFound if no such chapter
 // exists. Deleting a chapter cascades to its panels via the
 // FOREIGN KEY (chapter_id) ... ON DELETE CASCADE constraint on the panels table.
@@ -219,13 +247,50 @@ type scanner interface {
 	Scan(dest ...any) error
 }
 
-// scanChapter reads one chapter row in chapterColumns order.
+// scanChapter reads one chapter row in chapterColumns order, deserializing the
+// conversation JSON column into a []models.ConversationMsg.
 func scanChapter(s scanner) (models.Chapter, error) {
-	var c models.Chapter
+	var (
+		c    models.Chapter
+		conv string
+	)
 	if err := s.Scan(
-		&c.ID, &c.BookID, &c.Order, &c.Title, &c.Status, &c.Summary, &c.IsCover, &c.CreatedAt,
+		&c.ID, &c.BookID, &c.Order, &c.Title, &c.Status, &c.Summary, &c.IsCover, &conv, &c.PanelCount, &c.CreatedAt,
 	); err != nil {
 		return models.Chapter{}, err
 	}
+	parsed, err := unmarshalConversation(conv)
+	if err != nil {
+		return models.Chapter{}, fmt.Errorf("decode conversation for chapter %d: %w", c.ID, err)
+	}
+	c.Conversation = parsed
 	return c, nil
+}
+
+// marshalConversation serializes a conversation history into a JSON array TEXT.
+// A nil or empty slice serializes to "[]" so the stored column is always valid
+// JSON.
+func marshalConversation(conv []models.ConversationMsg) (string, error) {
+	if conv == nil {
+		conv = []models.ConversationMsg{}
+	}
+	b, err := json.Marshal(conv)
+	if err != nil {
+		return "", fmt.Errorf("marshal conversation: %w", err)
+	}
+	return string(b), nil
+}
+
+// unmarshalConversation deserializes a JSON array TEXT back into a conversation
+// history. An empty or whitespace-only string yields an empty slice rather than
+// an error.
+func unmarshalConversation(s string) ([]models.ConversationMsg, error) {
+	out := []models.ConversationMsg{}
+	if strings.TrimSpace(s) == "" {
+		return out, nil
+	}
+	if err := json.Unmarshal([]byte(s), &out); err != nil {
+		return nil, fmt.Errorf("unmarshal conversation: %w", err)
+	}
+	return out, nil
 }

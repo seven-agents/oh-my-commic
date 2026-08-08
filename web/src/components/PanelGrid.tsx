@@ -5,6 +5,7 @@ import { api } from '../api/client'
 import type { Panel } from '../api/types'
 import { errorMessage } from '../api/errors'
 import { type AssetIndex, resolveActors, resolveScene } from './chapter/assetLookup'
+import { canRenderPanel } from './chapter/panelStage'
 
 type PanelGridProps = {
   panels: Panel[]
@@ -26,6 +27,7 @@ export function PanelGrid({ panels, index, onPanelsChange, onNext }: PanelGridPr
     setError('')
     const merged = { ...panel, ...patch }
     const body = {
+      content: merged.content,
       caption: merged.caption,
       characterIds: merged.characterIds,
       sceneId: merged.sceneId,
@@ -43,6 +45,8 @@ export function PanelGrid({ panels, index, onPanelsChange, onNext }: PanelGridPr
   }
 
   const renderPanel = async (panel: Panel) => {
+    // 未解析的格不出图（会画出没内容的通用图）。
+    if (!canRenderPanel(panel)) return
     setError('')
     applyPanel(panel.id, { status: 'rendering' })
     try {
@@ -58,8 +62,9 @@ export function PanelGrid({ panels, index, onPanelsChange, onNext }: PanelGridPr
     setBulk(true)
     setError('')
     // 逐格顺序生成，避免压垮上游；每格用函数式更新叠加到最新 state。
+    // 未解析的格跳过（无结构字段，出图无意义）。
     for (const p of panels) {
-      if (p.status === 'done') continue
+      if (p.status === 'done' || !canRenderPanel(p)) continue
       applyPanel(p.id, { status: 'rendering' })
       try {
         const done = await api.post<Panel>(`/api/panels/${p.id}/render`)
@@ -75,7 +80,9 @@ export function PanelGrid({ panels, index, onPanelsChange, onNext }: PanelGridPr
   const summary = useMemo(() => buildCastSummary(panels, index), [panels, index])
   const doneCount = panels.filter((p) => p.status === 'done').length
   const allDone = panels.length > 0 && doneCount === panels.length
-  const anyPending = panels.some((p) => p.status !== 'done')
+  // 可全部生成：存在已解析但未出图的格。
+  const anyRenderable = panels.some((p) => p.status !== 'done' && canRenderPanel(p))
+  const unprocessedCount = panels.filter((p) => !canRenderPanel(p)).length
 
   return (
     <div className="flex flex-col gap-6">
@@ -101,10 +108,16 @@ export function PanelGrid({ panels, index, onPanelsChange, onNext }: PanelGridPr
         <p className="font-display text-ink-soft">
           已完成 <span className="font-bold text-ink">{doneCount}</span> / {panels.length} 格
         </p>
-        <Button onClick={renderAll} loading={bulk} disabled={!anyPending} variant="ghost" className="text-sm">
+        <Button onClick={renderAll} loading={bulk} disabled={!anyRenderable} variant="ghost" className="text-sm">
           🎨 全部生成
         </Button>
       </div>
+
+      {unprocessedCount > 0 && (
+        <p className="rounded-2xl bg-peach/15 px-4 py-2.5 text-center text-sm font-semibold text-ink-soft">
+          还有 {unprocessedCount} 格没解析，先回上一步点「解析这格」再出图哦
+        </p>
+      )}
 
       {error && (
         <p className="rounded-2xl bg-coral/10 px-4 py-3 text-center text-sm font-semibold text-coral">
@@ -118,6 +131,7 @@ export function PanelGrid({ panels, index, onPanelsChange, onNext }: PanelGridPr
             key={panel.id}
             panel={panel}
             index={index}
+            canRender={canRenderPanel(panel)}
             onSaveCaption={(caption) => savePanel(panel, { caption })}
             onRemoveActor={(actorId) =>
               savePanel(panel, { characterIds: panel.characterIds.filter((id) => id !== actorId) })

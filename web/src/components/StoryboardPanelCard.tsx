@@ -1,21 +1,29 @@
+import { Button } from './ui'
 import { EditableField } from './EditableField'
 import type { Panel } from '../api/types'
 import { type AssetIndex, resolveActors, resolveScene } from './chapter/assetLookup'
+import { isPanelProcessed } from './chapter/panelStage'
 
 type StoryboardPanelCardProps = {
   panel: Panel
   index: AssetIndex
   saving: boolean
+  processing: boolean
   onPatch: (patch: Partial<Panel>) => void
+  onProcess: () => void
 }
 
-// Stage ① 结构化分镜卡片：地点/出场角色(表情)/事件/旁白，均可内联编辑。
-export function StoryboardPanelCard({ panel, index, saving, onPatch }: StoryboardPanelCardProps) {
-  const actors = resolveActors(panel.characterIds, index)
-  const scene = resolveScene(panel.sceneId, index)
-
-  const setExpression = (charId: number, expr: string) =>
-    onPatch({ charExpressions: { ...panel.charExpressions, [charId]: expr } })
+// Stage ①/② 分镜卡：先展示可编辑的基本内容 content；
+// 「✨ 解析这格」后展开结构字段（地点/角色/事件/旁白/出图提示词），均可内联编辑。
+export function StoryboardPanelCard({
+  panel,
+  index,
+  saving,
+  processing,
+  onPatch,
+  onProcess,
+}: StoryboardPanelCardProps) {
+  const processed = isPanelProcessed(panel)
 
   return (
     <div className="flex animate-pop-in flex-col gap-2.5 rounded-4xl bg-white p-4 shadow-soft">
@@ -28,6 +36,64 @@ export function StoryboardPanelCard({ panel, index, saving, onPatch }: Storyboar
         </span>
       </div>
 
+      <Section emoji="🎬" label="这一格">
+        <EditableField
+          value={panel.content}
+          placeholder="这一格发生了什么…"
+          onCommit={(content) => onPatch({ content })}
+        />
+      </Section>
+
+      {processed ? (
+        <StructuredFields panel={panel} index={index} onPatch={onPatch} />
+      ) : (
+        <p className="rounded-2xl bg-cream/60 px-3 py-2 text-center text-xs text-ink-soft/70">
+          点「✨ 解析这格」，小助手会拆出地点、角色、旁白和出图提示词～
+        </p>
+      )}
+
+      <Button
+        onClick={onProcess}
+        loading={processing}
+        variant={processed ? 'ghost' : 'primary'}
+        className="text-sm"
+      >
+        {processed ? '🔁 重新解析这格' : '✨ 解析这格'}
+      </Button>
+      {processed && (
+        <p className="text-center text-[11px] text-ink-soft/60">
+          重新解析会用当前「这一格」内容覆盖下面的结构字段哦
+        </p>
+      )}
+    </div>
+  )
+}
+
+type StructuredFieldsProps = {
+  panel: Panel
+  index: AssetIndex
+  onPatch: (patch: Partial<Panel>) => void
+}
+
+// 解析后展开的结构字段：地点/出场角色(表情)/场景/事件/旁白/出图提示词，均可内联编辑。
+function StructuredFields({ panel, index, onPatch }: StructuredFieldsProps) {
+  const actors = resolveActors(panel.characterIds, index)
+  const scene = resolveScene(panel.sceneId, index)
+
+  const setExpression = (charId: number, expr: string) =>
+    onPatch({ charExpressions: { ...panel.charExpressions, [charId]: expr } })
+
+  const removeActor = (charId: number) => {
+    const nextExpr = { ...panel.charExpressions }
+    delete nextExpr[charId]
+    onPatch({
+      characterIds: panel.characterIds.filter((id) => id !== charId),
+      charExpressions: nextExpr,
+    })
+  }
+
+  return (
+    <div className="flex flex-col gap-2.5 border-t border-ink/5 pt-2.5">
       <Section emoji="📍" label="地点">
         <EditableField
           value={panel.location}
@@ -45,6 +111,14 @@ export function StoryboardPanelCard({ panel, index, saving, onPatch }: Storyboar
               <div key={a.id} className="flex items-center gap-2">
                 <span className="inline-flex flex-none items-center gap-1 rounded-full bg-sky/20 px-2.5 py-1 text-xs font-semibold text-sky-deep">
                   {a.emoji} {a.name}
+                  <button
+                    type="button"
+                    onClick={() => removeActor(a.id)}
+                    className="ml-0.5 text-sky-deep/60 hover:text-coral"
+                    aria-label={`移除 ${a.name}`}
+                  >
+                    ✕
+                  </button>
                 </span>
                 <EditableField
                   value={panel.charExpressions?.[a.id] ?? ''}
@@ -76,6 +150,14 @@ export function StoryboardPanelCard({ panel, index, saving, onPatch }: Storyboar
           value={panel.caption}
           placeholder="配一句旁白…"
           onCommit={(caption) => onPatch({ caption })}
+        />
+      </Section>
+
+      <Section emoji="🎨" label="出图提示词">
+        <EditableField
+          value={panel.imagePrompt}
+          placeholder="给画笔的提示词（英文）…"
+          onCommit={(imagePrompt) => onPatch({ imagePrompt })}
         />
       </Section>
     </div>

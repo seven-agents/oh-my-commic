@@ -56,6 +56,8 @@ var schemaStatements = []string{
   status TEXT NOT NULL DEFAULT 'draft',
   summary TEXT NOT NULL DEFAULT '',
   is_cover INTEGER NOT NULL DEFAULT 0,
+  conversation TEXT NOT NULL DEFAULT '[]',
+  panel_count INTEGER NOT NULL DEFAULT 6,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
 )`,
@@ -72,6 +74,7 @@ var schemaStatements = []string{
   location TEXT NOT NULL DEFAULT '',
   event TEXT NOT NULL DEFAULT '',
   char_expressions TEXT NOT NULL DEFAULT '{}',
+  content TEXT NOT NULL DEFAULT '',
   FOREIGN KEY (chapter_id) REFERENCES chapters(id) ON DELETE CASCADE
 )`,
 	`CREATE TABLE IF NOT EXISTS sessions (
@@ -92,6 +95,9 @@ var alterStatements = []string{
 	`ALTER TABLE panels ADD COLUMN char_expressions TEXT NOT NULL DEFAULT '{}'`,
 	`ALTER TABLE chapters ADD COLUMN summary TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE chapters ADD COLUMN is_cover INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE panels ADD COLUMN content TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE chapters ADD COLUMN conversation TEXT NOT NULL DEFAULT '[]'`,
+	`ALTER TABLE chapters ADD COLUMN panel_count INTEGER NOT NULL DEFAULT 6`,
 }
 
 // Migrate creates all application tables if they do not already exist, then

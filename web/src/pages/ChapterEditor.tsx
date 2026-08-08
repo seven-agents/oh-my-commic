@@ -92,6 +92,8 @@ export default function ChapterEditor() {
                 index={index}
                 onPanelsChange={replacePanels}
                 onConfirm={confirmStoryboard}
+                conversation={chapter.conversation ?? []}
+                savedPanelCount={chapter.panelCount ?? 0}
                 coverMode={chapter.isCover}
               />
             )}

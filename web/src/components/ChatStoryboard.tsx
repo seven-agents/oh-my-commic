@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Button, Card } from './ui'
 import { StoryboardPanelList } from './StoryboardPanelList'
 import { api } from '../api/client'
-import type { ChatMessage, Panel } from '../api/types'
+import type { ChatMessage, ConversationMsg, Panel } from '../api/types'
 import { errorMessage } from '../api/errors'
 import type { AssetIndex } from './chapter/assetLookup'
 
@@ -30,8 +30,22 @@ type ChatStoryboardProps = {
   index: AssetIndex
   onPanelsChange: (panels: Panel[]) => void
   onConfirm: () => void
+  // 持久化的对话历史 + 目标分镜数，用于重进章节时恢复。
+  conversation: ConversationMsg[]
+  savedPanelCount: number
   // 封面模式：隐藏分镜数选择器，始终传 panelCount=1，文案偏封面。
   coverMode?: boolean
+}
+
+// 后端 conversation 的 role 是 string，收窄成 ChatMessage 的角色联合。
+function toChatMessages(conversation: ConversationMsg[]): ChatMessage[] {
+  const roles: ChatMessage['role'][] = ['user', 'assistant', 'system']
+  return conversation.map((m) => ({
+    role: roles.includes(m.role as ChatMessage['role'])
+      ? (m.role as ChatMessage['role'])
+      : 'assistant',
+    content: m.content,
+  }))
 }
 
 // Stage ① 讲故事：左侧对话、右侧实时结构化分镜。每轮对话都会返回并持久化全量分镜。
@@ -41,6 +55,8 @@ export function ChatStoryboard({
   index,
   onPanelsChange,
   onConfirm,
+  conversation,
+  savedPanelCount,
   coverMode = false,
 }: ChatStoryboardProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -49,6 +65,18 @@ export function ChatStoryboard({
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const listRef = useRef<HTMLDivElement>(null)
+  // ref 防重入：网络往返期间忽略重复发送。
+  const sendingRef = useRef(false)
+  // 只在章节首次加载时用持久化数据初始化，避免每次对话把本地 state 冲掉。
+  const initedRef = useRef(false)
+
+  // 章节加载后：恢复对话历史 + 分镜数（重进章节可接着聊）。
+  useEffect(() => {
+    if (initedRef.current) return
+    initedRef.current = true
+    setMessages(toChatMessages(conversation))
+    if (savedPanelCount > 0) setPanelCount(savedPanelCount)
+  }, [conversation, savedPanelCount])
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: 'smooth' })
@@ -56,7 +84,8 @@ export function ChatStoryboard({
 
   const send = async () => {
     const content = draft.trim()
-    if (!content || sending) return
+    if (!content || sending || sendingRef.current) return
+    sendingRef.current = true
     const next: ChatMessage[] = [...messages, { role: 'user', content }]
     setMessages(next)
     setDraft('')
@@ -75,6 +104,7 @@ export function ChatStoryboard({
       setDraft(content)
     } finally {
       setSending(false)
+      sendingRef.current = false
     }
   }
 

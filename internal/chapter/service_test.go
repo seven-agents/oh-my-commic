@@ -7,6 +7,7 @@ import (
 
 	"github.com/seven-agents/oh-my-commic/internal/book"
 	"github.com/seven-agents/oh-my-commic/internal/db"
+	"github.com/seven-agents/oh-my-commic/internal/models"
 )
 
 // newTestService opens an in-memory database, seeds two users (ids 1 and 2 —
@@ -408,5 +409,63 @@ func TestSetSummaryOwnershipAndRoundTrip(t *testing.T) {
 	}
 	if len(list) != 1 || list[0].Summary != summary {
 		t.Fatalf("ListChapters 的 summary 应往返, got %+v", list)
+	}
+}
+
+// TestSaveConversationOwnershipAndRoundTrip verifies SaveConversation is
+// ownership-gated and that the persisted conversation + panel_count round-trip
+// through Get / List. A fresh chapter defaults panel_count to 6 and an empty
+// conversation to a non-nil empty slice.
+func TestSaveConversationOwnershipAndRoundTrip(t *testing.T) {
+	svc, books := newTestService(t)
+	b, err := books.Create(1, "书", "ghibli", "")
+	if err != nil {
+		t.Fatalf("create book: %v", err)
+	}
+	c, err := svc.CreateChapter(1, b.ID, "章")
+	if err != nil {
+		t.Fatalf("create chapter: %v", err)
+	}
+	// Defaults: panel_count 6, empty (non-nil) conversation.
+	if c.PanelCount != 6 {
+		t.Fatalf("新章节 panelCount 默认应为 6, got %d", c.PanelCount)
+	}
+	if c.Conversation == nil || len(c.Conversation) != 0 {
+		t.Fatalf("新章节对话应为非 nil 空切片, got %+v", c.Conversation)
+	}
+
+	conv := []models.ConversationMsg{
+		{Role: "user", Content: "讲个故事"},
+		{Role: "assistant", Content: "好呀"},
+	}
+
+	// Cross-user write must be rejected and must not mutate the conversation.
+	if _, err := svc.SaveConversation(2, c.ID, conv, 8); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("跨用户 SaveConversation 应 ErrNotFound, got %v", err)
+	}
+	if got, _ := svc.GetChapter(1, c.ID); len(got.Conversation) != 0 || got.PanelCount != 6 {
+		t.Fatalf("跨用户尝试后不应被改动, got conv=%+v count=%d", got.Conversation, got.PanelCount)
+	}
+
+	// Owner saves conversation + panel_count.
+	updated, err := svc.SaveConversation(1, c.ID, conv, 8)
+	if err != nil {
+		t.Fatalf("owner SaveConversation: %v", err)
+	}
+	if updated.PanelCount != 8 || len(updated.Conversation) != 2 {
+		t.Fatalf("SaveConversation 返回值错: %+v", updated)
+	}
+
+	// Round-trips through Get.
+	got, err := svc.GetChapter(1, c.ID)
+	if err != nil {
+		t.Fatalf("get chapter: %v", err)
+	}
+	if got.PanelCount != 8 || len(got.Conversation) != 2 {
+		t.Fatalf("Get 应往返 conversation/panelCount, got %+v", got)
+	}
+	if got.Conversation[0].Role != "user" || got.Conversation[0].Content != "讲个故事" ||
+		got.Conversation[1].Role != "assistant" || got.Conversation[1].Content != "好呀" {
+		t.Fatalf("对话内容往返错: %+v", got.Conversation)
 	}
 }

@@ -42,6 +42,12 @@ export type Scene = {
 
 export type ChapterStatus = 'draft' | 'storyboarding' | 'rendering' | 'done'
 
+// 第1段·讲故事对话的一条消息（持久化在 chapter.conversation）
+export type ConversationMsg = {
+  role: string
+  content: string
+}
+
 export type Chapter = {
   id: number
   bookId: number
@@ -51,6 +57,9 @@ export type Chapter = {
   summary: string
   isCover: boolean
   createdAt: string
+  // 第1段对话历史 + 目标分镜数（重进章节可恢复）
+  conversation: ConversationMsg[]
+  panelCount: number
 }
 
 export type PanelStatus = 'pending' | 'rendering' | 'done' | 'failed'
@@ -59,6 +68,8 @@ export type Panel = {
   id: number
   chapterId: number
   order: number
+  // 第1段产出的基本分镜内容（“这一格发生了什么”，可直接编辑）
+  content: string
   caption: string
   characterIds: number[]
   sceneId: number

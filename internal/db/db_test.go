@@ -197,6 +197,118 @@ func TestMigrateAddsColumnsToLegacyDB(t *testing.T) {
 	}
 }
 
+// TestPanelsContentColumn verifies the content column exists on the panels table
+// for a fresh DB (created inline by the CREATE TABLE statement).
+func TestPanelsContentColumn(t *testing.T) {
+	d, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	cols := panelColumnSet(t, d)
+	if !cols["content"] {
+		t.Fatalf("panels 表缺少列 %q，实际列: %v", "content", cols)
+	}
+}
+
+// TestChaptersConversationColumns verifies the conversation and panel_count
+// columns exist on the chapters table for a fresh DB.
+func TestChaptersConversationColumns(t *testing.T) {
+	d, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	cols := columnSet(t, d, "chapters")
+	for _, want := range []string{"conversation", "panel_count"} {
+		if !cols[want] {
+			t.Fatalf("chapters 表缺少列 %q，实际列: %v", want, cols)
+		}
+	}
+}
+
+// TestMigrateAddsContentToLegacyPanels proves the idempotent ALTER path for
+// panels.content: a legacy panels table without the column gains it after
+// Migrate, and a second Migrate run does not fail on the duplicate column.
+func TestMigrateAddsContentToLegacyPanels(t *testing.T) {
+	d, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	if _, err := d.Exec(`DROP TABLE panels`); err != nil {
+		t.Fatalf("drop panels: %v", err)
+	}
+	// Recreate panels WITHOUT the content column to simulate a legacy DB.
+	if _, err := d.Exec(`CREATE TABLE panels (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  chapter_id INTEGER NOT NULL,
+  "order" INTEGER NOT NULL DEFAULT 0,
+  caption TEXT NOT NULL DEFAULT '',
+  character_ids TEXT NOT NULL DEFAULT '[]',
+  scene_id INTEGER NOT NULL DEFAULT 0,
+  image_prompt TEXT NOT NULL DEFAULT '',
+  image_url TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending'
+)`); err != nil {
+		t.Fatalf("create legacy panels: %v", err)
+	}
+
+	if err := Migrate(d); err != nil {
+		t.Fatalf("migrate legacy DB: %v", err)
+	}
+	if cols := panelColumnSet(t, d); !cols["content"] {
+		t.Fatalf("迁移后 panels 表仍缺列 %q，实际列: %v", "content", cols)
+	}
+	if err := Migrate(d); err != nil {
+		t.Fatalf("重复迁移应幂等，got: %v", err)
+	}
+}
+
+// TestMigrateAddsConversationToLegacyChapters proves the idempotent ALTER path
+// for chapters.conversation and chapters.panel_count on a legacy DB.
+func TestMigrateAddsConversationToLegacyChapters(t *testing.T) {
+	d, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	if _, err := d.Exec(`DROP TABLE panels`); err != nil {
+		t.Fatalf("drop panels: %v", err)
+	}
+	if _, err := d.Exec(`DROP TABLE chapters`); err != nil {
+		t.Fatalf("drop chapters: %v", err)
+	}
+	// Recreate chapters WITHOUT conversation/panel_count to simulate a legacy DB.
+	if _, err := d.Exec(`CREATE TABLE chapters (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  book_id INTEGER NOT NULL,
+  "order" INTEGER NOT NULL DEFAULT 0,
+  title TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'draft',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`); err != nil {
+		t.Fatalf("create legacy chapters: %v", err)
+	}
+
+	if err := Migrate(d); err != nil {
+		t.Fatalf("migrate legacy DB: %v", err)
+	}
+	cols := columnSet(t, d, "chapters")
+	for _, want := range []string{"conversation", "panel_count"} {
+		if !cols[want] {
+			t.Fatalf("迁移后 chapters 表仍缺列 %q，实际列: %v", want, cols)
+		}
+	}
+	if err := Migrate(d); err != nil {
+		t.Fatalf("重复迁移应幂等，got: %v", err)
+	}
+}
+
 // panelColumnSet returns the set of column names on the panels table.
 func panelColumnSet(t *testing.T, d *sql.DB) map[string]bool {
 	t.Helper()

@@ -31,12 +31,12 @@ func mount(env *storyTestEnv, userID int64) http.Handler {
 const storyboardChatPath = "/storyboard-chat"
 
 func TestStoryboardChatHandlerOK(t *testing.T) {
-	env := newStoryTestEnv(t, `{"reply":"你好呀","panels":[{"location":"L","sceneId":0,"characters":[],"event":"E","caption":"a","imagePrompt":"x"}]}`)
+	env := newStoryTestEnv(t, `{"reply":"你好呀","panels":[{"content":"一个安静的清晨"}]}`)
 	ch := env.newChapter(t, 1)
 	srv := mount(env, 1)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/chapters/"+itoa(ch.ID)+storyboardChatPath,
-		strings.NewReader(`{"messages":[{"role":"user","content":"hi"}]}`))
+		strings.NewReader(`{"messages":[{"role":"user","content":"hi"}],"panelCount":3}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -46,8 +46,7 @@ func TestStoryboardChatHandlerOK(t *testing.T) {
 	var out struct {
 		Reply  string `json:"reply"`
 		Panels []struct {
-			Caption  string `json:"caption"`
-			Location string `json:"location"`
+			Content string `json:"content"`
 		} `json:"panels"`
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
@@ -56,8 +55,60 @@ func TestStoryboardChatHandlerOK(t *testing.T) {
 	if out.Reply != "你好呀" {
 		t.Fatalf("reply 错: %q", out.Reply)
 	}
-	if len(out.Panels) != 1 || out.Panels[0].Caption != "a" || out.Panels[0].Location != "L" {
+	if len(out.Panels) != 1 || out.Panels[0].Content != "一个安静的清晨" {
 		t.Fatalf("panels 错: %+v", out.Panels)
+	}
+}
+
+// TestProcessPanelHandlerOK verifies POST /api/panels/{id}/process decomposes a
+// seeded content-only panel and returns the updated structured panel.
+func TestProcessPanelHandlerOK(t *testing.T) {
+	env := newStoryTestEnv(t, `{"reply":"ok","panels":[{"content":"小狐狸在森林里"}]}`)
+	ch := env.newChapter(t, 1)
+	_, seeded, err := env.svc.StoryboardChat(1, ch.ID, nil, 0)
+	if err != nil || len(seeded) != 1 {
+		t.Fatalf("seed: %v (%d)", err, len(seeded))
+	}
+	env.setContent(`{"location":"森林","sceneId":0,"characters":[],"event":"漫步","caption":"走走","imagePrompt":"forest"}`)
+
+	srv := mount(env, 1)
+	req := httptest.NewRequest(http.MethodPost, "/api/panels/"+itoa(seeded[0].ID)+"/process", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("状态码 %d, body=%s", w.Code, w.Body.String())
+	}
+	var out struct {
+		Content  string `json:"content"`
+		Location string `json:"location"`
+		Event    string `json:"event"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if out.Content != "小狐狸在森林里" || out.Location != "森林" || out.Event != "漫步" {
+		t.Fatalf("process 结果错: %+v", out)
+	}
+}
+
+// TestProcessPanelHandlerCrossUser404 verifies a user cannot process another
+// user's panel.
+func TestProcessPanelHandlerCrossUser404(t *testing.T) {
+	env := newStoryTestEnv(t, `{"reply":"ok","panels":[{"content":"一格"}]}`)
+	ch := env.newChapter(t, 1)
+	_, seeded, err := env.svc.StoryboardChat(1, ch.ID, nil, 0)
+	if err != nil || len(seeded) != 1 {
+		t.Fatalf("seed: %v (%d)", err, len(seeded))
+	}
+
+	srv := mount(env, 2)
+	req := httptest.NewRequest(http.MethodPost, "/api/panels/"+itoa(seeded[0].ID)+"/process", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("跨用户应 404, got %d", w.Code)
 	}
 }
 
