@@ -37,10 +37,14 @@ docker buildx build --platform linux/amd64 -t oh-my-commic:latest --load .
 - **多用户隔离是第一要务**：每个数据访问都必须能追溯并校验 `user_id`；跨用户/不存在一律返回 **404**（不泄露存在性）。repository 查询带 `WHERE ... AND user_id=?`；资源按 panel→chapter→book→user 链式校验归属。
 - **不可变**：service 返回新对象，不原地改入参。
 - **小文件、单一职责**（200-400 行常态）。
-- **错误处理**：`%w` 包裹；AI/上游错误 → 通用 **502**，**绝不把 API key 或上游 body 返回给客户端 / 打日志**。
+- **错误处理**：`%w` 包裹；AI/上游错误按类映射（**429** 限流 / **504** 超时 / **502** 不可用，sentinel 在 `internal/ai/errors.go`，只看状态码/超时、不读 body）；**绝不把 API key 或上游 body 返回给客户端 / 打日志**。
+- **用户数据最小化（隐私）**：**不长期存储用户原始上传图**（真人照片等比风格化形象更敏感）；资产"重新生成"对**当前锁定形象图**再漫画化，**不**引入 `source_url`、**不**保留原图。
 - **提示词**：只在 `internal/ai/prompts.go`、`internal/render/service.go`(stylePrefix+buildPrompt)、`internal/comicify/prompts.go`。改提示词看 `docs/ARCHITECTURE-AND-PROMPTS.md`。
 - **迁移**：只用幂等 `ALTER TABLE ADD COLUMN`（`isDuplicateColumn` 容错），旧库不重建。
-- **API 版本化**：所有业务端点在 `/api/v1/*`（handler 用**资源相对路径** mount，版本前缀集中在 `internal/httpx/router.go` 的 `r.Route("/api/v1", ...)`）；`GET /api/health` **不**版本化。**改任何 `/api/v1/*` 端点（路径/字段/状态码）必须同步更新 `docs/openapi.yaml`（单一真相源），否则契约 E2E（`test/contract`）会红。**
+- **API 契约（前后端单一真相 = `docs/openapi.yaml`，OpenAPI 3.1）**：所有业务端点在 `/api/v1/*`（handler 用**资源相对路径** mount，版本前缀集中在 `internal/httpx/router.go` 的 `r.Route("/api/v1", ...)`）；`GET /api/health` **不**版本化。**改任何端点（路径/字段/状态码）必须同步更新 `docs/openapi.yaml`**——
+  - **后端**：契约 E2E（`test/contract`，`kin-openapi` 校验每个真实响应）会挡住跑偏，跑在 `go test`/CI 里；
+  - **前端**：`web/src/api`（`client.ts` 路径、`types.ts` 数据结构）也以 openapi.yaml 为准，两端共用同一契约；
+  - 人读概览见 `docs/frontend-api.md`（只是概览，以 openapi.yaml 为准）。
 - **git**：每功能一分支，完成后 `--no-ff` 合并回 main。提交信息中文 `type: 描述`。`.env`/`*.db`/`web/dist`/`node_modules` 均 gitignore，绝不入库/入镜像。
 
 ## 关键数据模型
