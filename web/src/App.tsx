@@ -1,5 +1,6 @@
 import { Routes, Route } from 'react-router-dom'
 import { RequireAuth } from './auth/RequireAuth'
+import Home from './pages/Home'
 import Login from './pages/Login'
 import Bookshelf from './pages/Bookshelf'
 import BookWorkspace from './pages/BookWorkspace'
@@ -20,7 +21,8 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
 
-      <Route path="/" element={<Protected><Bookshelf /></Protected>} />
+      <Route path="/" element={<Home />} />
+      <Route path="/my" element={<Protected><Bookshelf /></Protected>} />
       <Route path="/profile" element={<Protected><Profile /></Protected>} />
       <Route path="/books/:id" element={<Protected><BookWorkspace /></Protected>} />
       <Route path="/books/:id/read" element={<Protected><BookReader /></Protected>} />
