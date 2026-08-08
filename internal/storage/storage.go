@@ -168,6 +168,7 @@ func (s Local) Save(bookID int64, ext string, r io.Reader) (string, error) {
 func (s Local) Handler() http.Handler {
 	fs := http.FileServer(noDirFS{http.Dir(s.Root)})
 	stripped := http.StripPrefix(mediaPrefix, fs)
+	cache := newWebImageCache()
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// r.URL.Path is already percent-decoded by net/http. Reject any
@@ -179,6 +180,26 @@ func (s Local) Handler() http.Handler {
 		}
 		if !strings.HasPrefix(clean, mediaPrefix) && clean != strings.TrimSuffix(mediaPrefix, "/") {
 			http.NotFound(w, r)
+			return
+		}
+
+		// Media filenames are content hashes → effectively immutable. Long-cache
+		// so browsers stop re-downloading images on every view/scroll.
+		w.Header().Set("Cache-Control", "public, max-age=2592000")
+
+		// Serve a downscaled + recompressed JPEG for oversized images to cut
+		// transfer size at delivery time, without touching the stored original.
+		// ?full=1 opts out (e.g. a future high-res download).
+		full := r.URL.Query().Get("full") == "1"
+		if data, mime, ok := cache.optimized(s.Root, clean, full); ok {
+			w.Header().Set("Content-Type", mime)
+			w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+			if r.Method == http.MethodHead {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(data)
 			return
 		}
 		stripped.ServeHTTP(w, r)
