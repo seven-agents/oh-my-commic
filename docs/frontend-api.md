@@ -41,6 +41,13 @@
 - **章节**：`GET|POST /api/v1/books/{bookId}/chapters`、`POST /api/v1/books/{bookId}/cover-chapter`、`GET|DELETE /api/v1/chapters/{id}`、`PUT /api/v1/chapters/{id}/status`
 - **分镜**：`GET|PUT /api/v1/chapters/{id}/panels`（PUT 整章替换，后端重排 order）、`PUT /api/v1/panels/{id}`
 - **AI**：`POST /api/v1/chapters/{id}/storyboard-chat`（第 1 段对话拆镜）、`POST /api/v1/panels/{id}/process`（第 2 段解析）、`POST /api/v1/panels/{id}/render`（同步生图，消耗积分）
+- **社区（公开只读，走 `OptionalUser`，非公开/不存在一律 404）**：
+  - `GET /api/v1/community/books`：**公开 feed 列表**，分页 `limit`（≤50，缺省 20）+ `offset`；无需登录；只含公开书，作者仅 `nickname`/`avatarUrl`。
+  - `GET /api/v1/community/books/{id}`：**公开阅读详情**，无需登录；严格 `is_public` 过滤，非公开/不存在 **404**；**不含**章节 `conversation`/`panelCount`。
+  - `POST /api/v1/community/books/{id}/view`：**记独立浏览**（登录=`u:{id}` / 匿名=`anon:{clientId}` 去重），无需登录。
+  - `POST /api/v1/community/books/{id}/like`：**点赞**，**需登录**（未登录 401）；PK 去重幂等。
+  - `DELETE /api/v1/community/books/{id}/like`：**取消点赞**，**需登录**（未登录 401）。
+  - `PUT /api/v1/books/{id}/visibility`：**owner 发布/下架**（`{isPublic}`）；发布置 `is_public=1`+`published_at`，下架保留 `published_at`；跨用户/不存在 404。
 
 ## 数据结构
 以 openapi.yaml 的 `components.schemas` 为准。`User` 含 `id/username/nickname/email/role/age/gender/avatarUrl/createdAt/credits`（`nickname` 为展示名，`role` 取 `admin`/`user`；本期收集但不验证 `email`）；输入体 `RegisterInput`、`Credentials`、`ProfileInput`、`InviteCode`；业务模型 `Book`、`Character`、`Scene`、`Chapter`、`Panel`、`ConversationMsg`；错误信封 `Error`。字段名/类型与 `internal/models` 一致。
