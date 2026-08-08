@@ -632,6 +632,163 @@ func TestUploadInvalidBookID400(t *testing.T) {
 	}
 }
 
+// TestRegenerateCharacterRedrawsCurrentImage verifies the happy path: a character
+// that already carries a locked local image can be regenerated, which re-runs
+// comicify against that image, charges one credit, and overwrites imageUrl with
+// the fresh stylized url.
+func TestRegenerateCharacterRedrawsCurrentImage(t *testing.T) {
+	env := newHandlerTestEnv(t)
+	b, _ := env.books.Create(1, "书", "ghibli", "")
+	base := "/api/v1/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
+
+	// Seed a character whose stored image is a comic-ified local upload.
+	upload := env.seedUpload(t, b.ID)
+	rec := env.serveAs(t, httptest.NewRequest(http.MethodPost, base,
+		strings.NewReader(`{"name":"狐狸","type":"character","imageUrl":"`+upload+`"}`)), 1)
+	var created models.Character
+	_ = json.Unmarshal(rec.Body.Bytes(), &created)
+	if env.editor.calls != 1 {
+		t.Fatalf("create should comicify once, ran %d", env.editor.calls)
+	}
+	before := created.ImageURL
+
+	creditsBefore, _ := env.users.Credits(1)
+
+	regen := base + "/" + strconv.FormatInt(created.ID, 10) + "/regenerate"
+	rec = env.serveAs(t, httptest.NewRequest(http.MethodPost, regen, nil), 1)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("重画应为 200, got %d: %s", rec.Code, rec.Body)
+	}
+	var saved models.Character
+	_ = json.Unmarshal(rec.Body.Bytes(), &saved)
+
+	if env.editor.calls != 2 {
+		t.Fatalf("regenerate should run comicify again, calls=%d", env.editor.calls)
+	}
+	if !strings.HasPrefix(saved.ImageURL, "/media/") || saved.ImageURL == before {
+		t.Fatalf("imageUrl should be a new stylized media url, before=%q after=%q", before, saved.ImageURL)
+	}
+	if saved.Name != "狐狸" {
+		t.Fatalf("other fields must be preserved, got %+v", saved)
+	}
+	if got, _ := env.users.Credits(1); got != creditsBefore-1 {
+		t.Fatalf("regenerate should charge one credit: before=%d after=%d", creditsBefore, got)
+	}
+}
+
+// TestRegenerateCharacterInsufficientCreditsIs402 verifies that a drained balance
+// blocks regeneration with 402 and never calls the image editor.
+func TestRegenerateCharacterInsufficientCreditsIs402(t *testing.T) {
+	env := newHandlerTestEnv(t)
+	b, _ := env.books.Create(1, "书", "ghibli", "")
+	base := "/api/v1/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
+
+	upload := env.seedUpload(t, b.ID)
+	rec := env.serveAs(t, httptest.NewRequest(http.MethodPost, base,
+		strings.NewReader(`{"name":"狐狸","type":"character","imageUrl":"`+upload+`"}`)), 1)
+	var created models.Character
+	_ = json.Unmarshal(rec.Body.Bytes(), &created)
+	callsBefore := env.editor.calls
+
+	// Drain remaining balance to 0.
+	if got, _ := env.users.Credits(1); got > 0 {
+		if ok, err := env.users.Spend(1, got); err != nil || !ok {
+			t.Fatalf("drain credits: ok=%v err=%v", ok, err)
+		}
+	}
+
+	regen := base + "/" + strconv.FormatInt(created.ID, 10) + "/regenerate"
+	rec = env.serveAs(t, httptest.NewRequest(http.MethodPost, regen, nil), 1)
+	if rec.Code != http.StatusPaymentRequired {
+		t.Fatalf("积分不足重画应为 402, got %d: %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), "积分不足") {
+		t.Fatalf("body should carry a friendly credit message, got %s", rec.Body)
+	}
+	if env.editor.calls != callsBefore {
+		t.Fatalf("image editor must not run when credits are insufficient, calls=%d", env.editor.calls)
+	}
+}
+
+// TestRegenerateCharacterNoImageIs400 verifies that regenerating an asset that has
+// no locked local image is rejected with 400 and never spends a credit.
+func TestRegenerateCharacterNoImageIs400(t *testing.T) {
+	env := newHandlerTestEnv(t)
+	b, _ := env.books.Create(1, "书", "ghibli", "")
+	base := "/api/v1/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
+
+	// Character with no image at all.
+	rec := env.serveAs(t, httptest.NewRequest(http.MethodPost, base,
+		strings.NewReader(`{"name":"狐狸","type":"character"}`)), 1)
+	var created models.Character
+	_ = json.Unmarshal(rec.Body.Bytes(), &created)
+
+	regen := base + "/" + strconv.FormatInt(created.ID, 10) + "/regenerate"
+	rec = env.serveAs(t, httptest.NewRequest(http.MethodPost, regen, nil), 1)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("无本地图重画应为 400, got %d: %s", rec.Code, rec.Body)
+	}
+	if env.editor.calls != 0 {
+		t.Fatalf("comicify must not run without a local image, ran %d", env.editor.calls)
+	}
+}
+
+// TestRegenerateCharacterCrossUser404 verifies cross-user regeneration is a 404
+// that does not leak the asset's existence and never calls the image editor.
+func TestRegenerateCharacterCrossUser404(t *testing.T) {
+	env := newHandlerTestEnv(t)
+	b, _ := env.books.Create(1, "书", "ghibli", "")
+	base := "/api/v1/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
+
+	upload := env.seedUpload(t, b.ID)
+	rec := env.serveAs(t, httptest.NewRequest(http.MethodPost, base,
+		strings.NewReader(`{"name":"狐狸","type":"character","imageUrl":"`+upload+`"}`)), 1)
+	var created models.Character
+	_ = json.Unmarshal(rec.Body.Bytes(), &created)
+	callsBefore := env.editor.calls
+
+	// User 2 attempts to regenerate user 1's character.
+	regen := base + "/" + strconv.FormatInt(created.ID, 10) + "/regenerate"
+	rec = env.serveAs(t, httptest.NewRequest(http.MethodPost, regen, nil), 2)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("越权重画应为 404, got %d: %s", rec.Code, rec.Body)
+	}
+	if env.editor.calls != callsBefore {
+		t.Fatalf("comicify must not run for cross-user regenerate, calls=%d", env.editor.calls)
+	}
+}
+
+// TestRegenerateSceneRedrawsCurrentImage verifies the scene regenerate happy path.
+func TestRegenerateSceneRedrawsCurrentImage(t *testing.T) {
+	env := newHandlerTestEnv(t)
+	b, _ := env.books.Create(1, "书", "ghibli", "")
+	base := "/api/v1/books/" + strconv.FormatInt(b.ID, 10) + "/scenes"
+
+	upload := env.seedUpload(t, b.ID)
+	rec := env.serveAs(t, httptest.NewRequest(http.MethodPost, base,
+		strings.NewReader(`{"name":"森林","imageUrl":"`+upload+`"}`)), 1)
+	var created models.Scene
+	_ = json.Unmarshal(rec.Body.Bytes(), &created)
+	before := created.ImageURL
+
+	regen := base + "/" + strconv.FormatInt(created.ID, 10) + "/regenerate"
+	rec = env.serveAs(t, httptest.NewRequest(http.MethodPost, regen, nil), 1)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("场景重画应为 200, got %d: %s", rec.Code, rec.Body)
+	}
+	var saved models.Scene
+	_ = json.Unmarshal(rec.Body.Bytes(), &saved)
+	if env.editor.calls != 2 {
+		t.Fatalf("scene regenerate should comicify again, calls=%d", env.editor.calls)
+	}
+	if !strings.HasPrefix(saved.ImageURL, "/media/") || saved.ImageURL == before {
+		t.Fatalf("scene imageUrl should be a new stylized url, before=%q after=%q", before, saved.ImageURL)
+	}
+	if saved.Name != "森林" {
+		t.Fatalf("scene fields must be preserved, got %+v", saved)
+	}
+}
+
 // TestWriteComicifyErrorClassifies verifies the comicify error mapping: the
 // insufficient-credits and AI-error sentinels map to distinct HTTP statuses via
 // the wrapped chain, with the generic fallback staying 502.

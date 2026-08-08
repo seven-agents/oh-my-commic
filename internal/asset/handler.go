@@ -22,6 +22,10 @@ import (
 // candidates for comic-ification; an empty or external URL is persisted as-is.
 const mediaPrefix = "/media/"
 
+// errNoLocalImage is returned by the regenerate endpoints when the asset has no
+// locked local image to redraw (nothing was ever uploaded/saved for it).
+const errNoLocalImage = "还没有形象图，先上传保存一次再重画"
+
 // maxUploadBytes caps the size of an uploaded asset (5 MiB). The limit is
 // enforced both on the request body (MaxBytesReader) and the multipart parser.
 const maxUploadBytes = 5 << 20
@@ -75,10 +79,12 @@ func belongsToBook(url string, bookID int64) bool {
 //	GET    /api/v1/books/{bookId}/characters
 //	POST   /api/v1/books/{bookId}/characters
 //	PUT    /api/v1/books/{bookId}/characters/{id}
+//	POST   /api/v1/books/{bookId}/characters/{id}/regenerate
 //	DELETE /api/v1/books/{bookId}/characters/{id}
 //	GET    /api/v1/books/{bookId}/scenes
 //	POST   /api/v1/books/{bookId}/scenes
 //	PUT    /api/v1/books/{bookId}/scenes/{id}
+//	POST   /api/v1/books/{bookId}/scenes/{id}/regenerate
 //	DELETE /api/v1/books/{bookId}/scenes/{id}
 //
 // It deliberately does NOT attach auth.RequireUser: the caller mounts these
@@ -90,11 +96,13 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Get("/books/{bookId}/characters", h.ListCharacters)
 	r.Post("/books/{bookId}/characters", h.CreateCharacter)
 	r.Put("/books/{bookId}/characters/{id}", h.UpdateCharacter)
+	r.Post("/books/{bookId}/characters/{id}/regenerate", h.RegenerateCharacter)
 	r.Delete("/books/{bookId}/characters/{id}", h.DeleteCharacter)
 
 	r.Get("/books/{bookId}/scenes", h.ListScenes)
 	r.Post("/books/{bookId}/scenes", h.CreateScene)
 	r.Put("/books/{bookId}/scenes/{id}", h.UpdateScene)
+	r.Post("/books/{bookId}/scenes/{id}/regenerate", h.RegenerateScene)
 	r.Delete("/books/{bookId}/scenes/{id}", h.DeleteScene)
 }
 
@@ -256,6 +264,46 @@ func (h *Handler) UpdateCharacter(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, updated)
 }
 
+// RegenerateCharacter handles POST /api/v1/books/{bookId}/characters/{id}/regenerate.
+// It re-runs comic-ification against the asset's CURRENT locked image (never a
+// stored raw upload — none is kept) and overwrites imageUrl with the new result.
+// The request has no body. One credit is charged (refunded on failure; an empty
+// balance yields 402). Cross-user or unknown ids yield 404 without leaking
+// existence.
+func (h *Handler) RegenerateCharacter(w http.ResponseWriter, r *http.Request) {
+	userID := auth.UserID(r.Context())
+	id, ok := parseAssetID(w, r)
+	if !ok {
+		return
+	}
+
+	existing, err := h.svc.GetCharacter(userID, id)
+	if err != nil {
+		writeAssetError(w, err, "重画失败")
+		return
+	}
+	if !isLocalUpload(existing.ImageURL) || !belongsToBook(existing.ImageURL, existing.BookID) {
+		writeError(w, http.StatusBadRequest, errNoLocalImage)
+		return
+	}
+
+	stylized, err := h.comic.Character(r.Context(), userID, existing.BookID, existing, existing.ImageURL)
+	if err != nil {
+		writeComicifyError(w, err)
+		return
+	}
+
+	// Immutable update: copy the loaded asset, swap only the image, persist.
+	updated := existing
+	updated.ImageURL = stylized
+	saved, err := h.svc.UpdateCharacter(userID, id, updated)
+	if err != nil {
+		writeAssetError(w, err, "重画失败")
+		return
+	}
+	writeJSON(w, http.StatusOK, saved)
+}
+
 // DeleteCharacter handles DELETE /api/v1/books/{bookId}/characters/{id}.
 func (h *Handler) DeleteCharacter(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
@@ -358,6 +406,43 @@ func (h *Handler) UpdateScene(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, updated)
+}
+
+// RegenerateScene handles POST /api/v1/books/{bookId}/scenes/{id}/regenerate.
+// It mirrors RegenerateCharacter: re-comic-ify the scene's current locked image
+// (no raw upload is retained) and overwrite imageUrl. No request body; one credit
+// charged (refunded on failure, 402 when empty); 404 on cross-user/unknown ids.
+func (h *Handler) RegenerateScene(w http.ResponseWriter, r *http.Request) {
+	userID := auth.UserID(r.Context())
+	id, ok := parseAssetID(w, r)
+	if !ok {
+		return
+	}
+
+	existing, err := h.svc.GetScene(userID, id)
+	if err != nil {
+		writeAssetError(w, err, "重画失败")
+		return
+	}
+	if !isLocalUpload(existing.ImageURL) || !belongsToBook(existing.ImageURL, existing.BookID) {
+		writeError(w, http.StatusBadRequest, errNoLocalImage)
+		return
+	}
+
+	stylized, err := h.comic.Scene(r.Context(), userID, existing.BookID, existing, existing.ImageURL)
+	if err != nil {
+		writeComicifyError(w, err)
+		return
+	}
+
+	updated := existing
+	updated.ImageURL = stylized
+	saved, err := h.svc.UpdateScene(userID, id, updated)
+	if err != nil {
+		writeAssetError(w, err, "重画失败")
+		return
+	}
+	writeJSON(w, http.StatusOK, saved)
 }
 
 // DeleteScene handles DELETE /api/v1/books/{bookId}/scenes/{id}.
