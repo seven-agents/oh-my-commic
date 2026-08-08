@@ -27,7 +27,7 @@
 ## 端点速查（详情见 openapi.yaml）
 - **认证**：`POST /api/v1/register`、`POST /api/v1/login`、`POST /api/v1/logout`、`GET /api/v1/me`
 - **书**：`GET|POST /api/v1/books`、`GET|PUT|DELETE /api/v1/books/{id}`
-- **资产**：`POST /api/v1/books/{bookId}/upload`；`GET|POST /api/v1/books/{bookId}/characters`、`PUT|DELETE .../characters/{id}`；`scenes` 同构
+- **资产**：`POST /api/v1/books/{bookId}/upload`；`GET|POST /api/v1/books/{bookId}/characters`、`PUT|DELETE .../characters/{id}`、`POST .../characters/{id}/regenerate`（对当前形象图重画，无 body，扣 1 积分/失败退还/余额不足 402/无本地图 400）；`scenes` 同构
 - **章节**：`GET|POST /api/v1/books/{bookId}/chapters`、`POST /api/v1/books/{bookId}/cover-chapter`、`GET|DELETE /api/v1/chapters/{id}`、`PUT /api/v1/chapters/{id}/status`
 - **分镜**：`GET|PUT /api/v1/chapters/{id}/panels`（PUT 整章替换，后端重排 order）、`PUT /api/v1/panels/{id}`
 - **AI**：`POST /api/v1/chapters/{id}/storyboard-chat`（第 1 段对话拆镜）、`POST /api/v1/panels/{id}/process`（第 2 段解析）、`POST /api/v1/panels/{id}/render`（同步生图，消耗积分）

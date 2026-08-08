@@ -291,6 +291,19 @@ func TestContractEndToEnd(t *testing.T) {
 	if code != http.StatusCreated {
 		t.Fatalf("create character: want 201, got %d: %s", code, body)
 	}
+	var char models.Character
+	mustJSON(t, body, &char)
+
+	// --- regenerate a character with no locked image -> 400 (validated envelope) ---
+	// This exercises the new regenerate contract path without any AI call.
+	code, body = app.call(t, http.MethodPost,
+		bookPath+"/characters/"+itoa(char.ID)+"/regenerate", cookie, nil)
+	if code != http.StatusBadRequest {
+		t.Fatalf("regenerate without image: want 400, got %d: %s", code, body)
+	}
+	if app.gen.calls != 0 {
+		t.Fatalf("regenerate must not call generator without a local image, calls=%d", app.gen.calls)
+	}
 
 	// --- create a chapter ---
 	code, body = app.call(t, http.MethodPost, bookPath+"/chapters", cookie,
