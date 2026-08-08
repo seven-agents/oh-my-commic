@@ -121,7 +121,14 @@ func TestHTTPSetStatusFlowAndIllegal(t *testing.T) {
 		t.Fatalf("legal transition expected 200, got %d", rec.Code)
 	}
 
+	// storyboarding → done is legal (保存成书 may skip the rendering marker).
 	rec = env.do(1, http.MethodPut, statusPath, statusRequest{Status: "done"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("storyboarding→done expected 200, got %d", rec.Code)
+	}
+
+	// An unknown status is still rejected as an illegal transition (400).
+	rec = env.do(1, http.MethodPut, statusPath, statusRequest{Status: "飞天遁地"})
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("illegal transition expected 400, got %d", rec.Code)
 	}

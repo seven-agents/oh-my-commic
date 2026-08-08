@@ -106,6 +106,31 @@ func TestLegalStatusFlow(t *testing.T) {
 	}
 }
 
+// TestSetStatusIdempotentAndSaveBook covers the "保存成书" flow: storyboarding →
+// done is legal (it may skip the rendering marker), and setting a status to the
+// one it already has is an idempotent no-op rather than an error.
+func TestSetStatusIdempotentAndSaveBook(t *testing.T) {
+	svc, books := newTestService(t)
+	b, _ := books.Create(1, "书", "ghibli", "")
+	c, _ := svc.CreateChapter(1, b.ID, "章")
+
+	if _, err := svc.SetStatus(1, c.ID, "storyboarding"); err != nil {
+		t.Fatalf("draft→storyboarding failed: %v", err)
+	}
+	// 保存成书: storyboarding → done directly.
+	if _, err := svc.SetStatus(1, c.ID, "done"); err != nil {
+		t.Fatalf("storyboarding→done (保存成书) should be legal, got %v", err)
+	}
+	// Idempotent: setting done again is a no-op, not ErrInvalidStatus.
+	got, err := svc.SetStatus(1, c.ID, "done")
+	if err != nil {
+		t.Fatalf("done→done should be an idempotent no-op, got %v", err)
+	}
+	if got.Status != "done" {
+		t.Fatalf("status should stay done, got %q", got.Status)
+	}
+}
+
 // TestIllegalStatusTransition verifies that a transition absent from the state
 // machine (draft → done) is rejected with ErrInvalidStatus and does not mutate
 // the stored status.
