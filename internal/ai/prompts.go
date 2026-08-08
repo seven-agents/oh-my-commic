@@ -59,6 +59,7 @@ func storyboardChatPrompt(assets AssetContext, panelCount int) string {
 		"\n请与用户对话，一起打磨这一章的分镜。每次只输出一个 JSON 对象，不要输出任何解释、前后缀或代码块标记：\n" +
 		"{\n" +
 		"  \"reply\": \"给用户的一句温暖回应\",\n" +
+		"  \"summary\": \"这一章故事的一段温暖、简短(2~4句)的中文概述\",\n" +
 		"  \"panels\": [\n" +
 		"    {\n" +
 		"      \"location\": \"地点（中文，例如：黄昏的森林餐桌旁）\",\n" +
@@ -71,6 +72,7 @@ func storyboardChatPrompt(assets AssetContext, panelCount int) string {
 		"  ]\n" +
 		"}\n" +
 		"规则：\n" +
+		"- \"summary\" 是基于用户所讲故事润色出的**一段温暖、简短(2~4句)的中文故事概述**，用于这本书的书页展示（不是旁白，是整章故事的概括）；\n" +
 		"- 每一格分镜都必须有 地点、人物(每个都带表情)、事件；\n" +
 		"- 每格出场角色数 + (有场景则 1，否则 0) ≤ 10；角色优先；\n" +
 		"- characters[].id 和 sceneId 只能引用上面列出的 id，不要编造；\n" +

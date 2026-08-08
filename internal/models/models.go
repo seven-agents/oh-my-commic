@@ -48,12 +48,17 @@ type Scene struct {
 }
 
 // Chapter is an ordered section of a Book.
+//
+// Summary is an AI-polished, warm Chinese overview (2-4 sentences) of the
+// chapter's story, produced as a side-output of the storyboard-chat turn and
+// shown on the book reader's per-chapter page.
 type Chapter struct {
 	ID        int64  `json:"id"`
 	BookID    int64  `json:"bookId"`
 	Order     int    `json:"order"`
 	Title     string `json:"title"`
 	Status    string `json:"status"`
+	Summary   string `json:"summary"`
 	CreatedAt string `json:"createdAt"`
 }
 
