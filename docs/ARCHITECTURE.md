@@ -62,6 +62,14 @@ flowchart TB
 
 **要点**：单进程同时托管 SPA + API + 图片；`auth.UserRepo` 用一个窄接口 `Spend/Refund` 充当积分账本，被 `render`/`comicify` 依赖（接口隔离）；所有 AI 调用集中在 `ai.Client`，上游错误在此分类为 429/504/502，**绝不外泄 body 与 key**。
 
+### 2.1 传输优化（gzip / 图片压缩 / 缓存）
+
+Seedream 出的是 2048² 原图（~1.5MB/张），直传给浏览器压力大。优化都在**服务端返回时**做，**不改存储**：
+
+- **图片返回时压缩**：`/media` 请求若图片长边 > 1280px，服务端降采样 + 重编码 **JPEG q80** 后返回（实测 **1.5MB → 254KB，-83%**），存储原图保持不动；进程内缓存压缩结果（文件名是内容哈希，稳定）避免重复解码；`?full=1` 可取原图。见 `internal/imageutil.CompressForWeb` + `internal/storage` 媒体 handler。
+- **gzip 文本**：chi `Compress` 中间件压 JS/CSS/HTML/JSON（250KB JS → ~76KB），图片已压缩自动跳过。
+- **长缓存头**：内容哈希文件名 → `/assets/*` `immutable` 一年、`/media/*` 30 天；`index.html` `no-cache`（保证部署后拿到新资源哈希）。重复浏览直接命中浏览器缓存。
+
 ---
 
 ## 3. 数据模型（ER 图）

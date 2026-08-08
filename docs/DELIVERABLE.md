@@ -101,7 +101,10 @@ AI/上游错误按类型映射为**明确状态码**（sentinel 在 `internal/ai
 #### 4.5 部署与运维
 Docker + docker-compose 一键起（宿主 80 → 容器 8080），数据落**具名卷** `omc-data:/data`（DB + 图片）；**密钥仅经 `.env`（`env_file`）运行时注入，绝不进镜像、绝不入 git**。健康探针 + `restart: unless-stopped`。已在真实服务器部署并验证 healthy。
 
-#### 4.6 安全与隐私
+#### 4.6 性能：传输优化
+针对 Seedream 2048² 原图（~1.5MB）偏大的问题，在**服务端返回时**优化、**不改存储**：`/media` 大图降采样 + JPEG q80 后返回（线上实测 **1.5MB → 254KB，-83%**，`?full=1` 取原图）、chi `Compress` gzip 文本（250KB JS → ~76KB）、内容哈希文件加 `immutable`/长缓存头。详见 [`ARCHITECTURE.md` §2.1](ARCHITECTURE.md)。
+
+#### 4.7 安全与隐私
 - **不长期存储用户原始上传图**（真人照更敏感）：资产"重新生成"对**当前锁定形象图**再漫画化，不引入 `source_url`、不留原图。
 - 社区公开端点严格 `is_public=1` 过滤，作者**只暴露 nickname+avatarUrl**（绝不 username/email），公开阅读详情不含章节对话。
 - 密钥/上游 body/密码哈希**绝不外泄**；`.env`/`*.db`/`web/dist`/`node_modules` 全部 gitignore。
