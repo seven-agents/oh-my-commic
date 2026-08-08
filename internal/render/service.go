@@ -19,6 +19,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/seven-agents/oh-my-commic/internal/asset"
@@ -259,14 +260,33 @@ func (s *Service) buildPrompt(userID, bookID int64, p models.Panel) (string, []s
 		b.WriteString("。")
 	}
 
+	// Collect reference images together with a human label, in the SAME order,
+	// so we can bind each numbered reference to its subject in the prompt.
 	refs := make([]string, 0, len(matchedChars)+1)
+	labels := make([]string, 0, len(matchedChars)+1)
 	for _, c := range matchedChars {
 		if c.ImageURL != "" {
 			refs = append(refs, c.ImageURL)
+			labels = append(labels, "角色"+c.Name)
 		}
 	}
 	if hasScene && matchedScene.ImageURL != "" {
 		refs = append(refs, matchedScene.ImageURL)
+		labels = append(labels, "场景"+matchedScene.Name)
+	}
+
+	// Explicitly bind each numbered reference image to its subject. Passing
+	// several images without saying which is which lets the multi-image edit
+	// model swap or blend them, so the drawn characters drift from their locked
+	// reference. Numbering the references and naming each one keeps every
+	// character faithful to its own indexed image.
+	if len(labels) > 0 {
+		b.WriteString("本次提供了 ")
+		b.WriteString(strconv.Itoa(len(labels)))
+		b.WriteString(" 张参考图，请严格按参考图还原对应对象的样貌，画面中每个角色都要与它自己的参考图保持一致：")
+		for i, label := range labels {
+			b.WriteString(fmt.Sprintf("参考图%d=%s；", i+1, label))
+		}
 	}
 
 	return b.String(), refs, nil

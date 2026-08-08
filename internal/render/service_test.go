@@ -254,6 +254,14 @@ func TestRenderPanelHappyPath(t *testing.T) {
 	if !strings.Contains(prompt, "小龙") {
 		t.Fatalf("prompt missing character name: %q", prompt)
 	}
+	// Each reference image must be explicitly bound to its subject, in order
+	// (character first, scene last), so the multi-image model maps them right.
+	if !strings.Contains(prompt, "参考图1=角色小龙") {
+		t.Fatalf("prompt missing reference-image binding for the character: %q", prompt)
+	}
+	if !strings.Contains(prompt, "参考图2=场景") {
+		t.Fatalf("prompt missing reference-image binding for the scene: %q", prompt)
+	}
 
 	// With ≥1 matched reference, the multi-image edit path must be used (not
 	// the text2image fallback).
