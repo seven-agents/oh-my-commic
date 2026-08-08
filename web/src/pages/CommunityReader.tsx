@@ -90,6 +90,8 @@ export default function CommunityReader() {
       title={detail?.title ?? ''}
       coverPage={coverPage}
       chapterPages={chapterPages}
+      backTo="/community"
+      backLabel="回到社区"
       headerRight={
         <Link to="/community">
           <Button variant="ghost" className="text-sm">

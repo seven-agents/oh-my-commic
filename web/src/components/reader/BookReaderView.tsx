@@ -12,6 +12,8 @@ interface BookReaderViewProps {
   chapterPages: ReaderPageData[] // kind:'chapter'
   headerRight?: ReactNode // 头部右侧插槽
   footer?: ReactNode // 底部插槽(点赞栏等)
+  backTo?: string // 空/错态返回链接（默认 owner 书架）
+  backLabel?: string // 空/错态返回文案（默认「回到书架」）
 }
 
 // 阅读器纯展示层：翻页 state + 键盘左右 + 封面/章节页拼装渲染 + loading/error/空态。
@@ -24,6 +26,8 @@ export function BookReaderView({
   chapterPages,
   headerRight,
   footer,
+  backTo = '/my',
+  backLabel = '回到书架',
 }: BookReaderViewProps) {
   const [index, setIndex] = useState(0)
 
@@ -62,8 +66,8 @@ export function BookReaderView({
             title="这本书还没准备好"
             description={error || '找不到这本书'}
             action={
-              <Link to="/my">
-                <Button variant="ghost">回到书架</Button>
+              <Link to={backTo}>
+                <Button variant="ghost">{backLabel}</Button>
               </Link>
             }
           />

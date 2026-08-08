@@ -31,4 +31,33 @@ describe('BookReaderView', () => {
     )
     expect(screen.queryByText('我的书')).not.toBeInTheDocument()
   })
+
+  it('错误态默认返回链接指向书架', () => {
+    render(
+      <MemoryRouter>
+        <BookReaderView loading={false} error="加载失败" title="" coverPage={null} chapterPages={[]} />
+      </MemoryRouter>,
+    )
+    const link = screen.getByRole('link', { name: '回到书架' })
+    expect(link).toHaveAttribute('href', '/my')
+  })
+
+  it('错误态支持自定义 backTo/backLabel', () => {
+    render(
+      <MemoryRouter>
+        <BookReaderView
+          loading={false}
+          error="加载失败"
+          title=""
+          coverPage={null}
+          chapterPages={[]}
+          backTo="/community"
+          backLabel="回到社区"
+        />
+      </MemoryRouter>,
+    )
+    const link = screen.getByRole('link', { name: '回到社区' })
+    expect(link).toHaveAttribute('href', '/community')
+    expect(screen.queryByRole('link', { name: '回到书架' })).toBeNull()
+  })
 })
