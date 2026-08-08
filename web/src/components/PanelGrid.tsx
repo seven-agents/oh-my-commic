@@ -154,7 +154,7 @@ export function PanelGrid({ panels, index, onPanelsChange, onNext }: PanelGridPr
         </p>
       )}
 
-      <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+      <div className="grid grid-cols-1 items-start gap-5 sm:grid-cols-2">
         {panels.map((panel) => (
           <PanelCard
             key={panel.id}
