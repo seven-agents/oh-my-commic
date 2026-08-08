@@ -27,15 +27,15 @@ func NewHandler(svc *Service) *Handler {
 
 // Mount registers the render endpoint onto r using its absolute path.
 //
-//	POST /api/panels/{id}/render
+//	POST /api/v1/panels/{id}/render
 //
 // Like the sibling handlers, it does not attach auth.RequireUser: the caller
 // mounts this inside a group already wrapped with RequireUser.
 func (h *Handler) Mount(r chi.Router) {
-	r.Post("/api/panels/{id}/render", h.Render)
+	r.Post("/panels/{id}/render", h.Render)
 }
 
-// Render handles POST /api/panels/{id}/render. It renders the panel synchronously
+// Render handles POST /api/v1/panels/{id}/render. It renders the panel synchronously
 // and returns the updated panel JSON. ErrNotFound maps to 404; any generation or
 // download failure maps to a generic 502 so upstream/API detail never leaks.
 func (h *Handler) Render(w http.ResponseWriter, r *http.Request) {

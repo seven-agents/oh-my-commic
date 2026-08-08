@@ -22,7 +22,7 @@ export default function Bookshelf() {
     let alive = true
     ;(async () => {
       try {
-        const data = await api.get<Book[]>('/api/books')
+        const data = await api.get<Book[]>('/api/v1/books')
         if (alive) setBooks(data ?? [])
       } catch (err) {
         if (alive) setLoadError(errorMessage(err))
@@ -57,7 +57,7 @@ export default function Bookshelf() {
     setDeleting(true)
     setDeleteError('')
     try {
-      await api.del(`/api/books/${pendingDelete.id}`)
+      await api.del(`/api/v1/books/${pendingDelete.id}`)
       setBooks((prev) => prev.filter((b) => b.id !== pendingDelete.id))
       setPendingDelete(null)
     } catch (err) {
@@ -172,7 +172,7 @@ function CreateBookModal({
     }
     setError('')
     try {
-      const book = await api.post<Book>('/api/books', { title: trimmed, style: 'ghibli' })
+      const book = await api.post<Book>('/api/v1/books', { title: trimmed, style: 'ghibli' })
       setTitle('')
       onCreated(book)
     } catch (err) {

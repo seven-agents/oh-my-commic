@@ -64,14 +64,14 @@ func TestBooksRequireAuth(t *testing.T) {
 	srv := httptest.NewServer(newTestRouter(t))
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/api/books")
+	resp, err := http.Get(srv.URL + "/api/v1/books")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("GET /api/books without session: want 401, got %d", resp.StatusCode)
+		t.Fatalf("GET /api/v1/books without session: want 401, got %d", resp.StatusCode)
 	}
 }
 
@@ -86,14 +86,14 @@ func TestBookFlow(t *testing.T) {
 	const creds = `{"nickname":"小明","password":"pw123456"}`
 
 	// Register.
-	regResp := post(t, srv.URL+"/api/register", "", creds)
+	regResp := post(t, srv.URL+"/api/v1/register", "", creds)
 	regResp.Body.Close()
 	if regResp.StatusCode != http.StatusCreated {
 		t.Fatalf("register: want 201, got %d", regResp.StatusCode)
 	}
 
 	// Login and capture the session cookie.
-	loginResp := post(t, srv.URL+"/api/login", "", creds)
+	loginResp := post(t, srv.URL+"/api/v1/login", "", creds)
 	loginResp.Body.Close()
 	if loginResp.StatusCode != http.StatusOK {
 		t.Fatalf("login: want 200, got %d", loginResp.StatusCode)
@@ -101,7 +101,7 @@ func TestBookFlow(t *testing.T) {
 	cookie := sessionCookie(t, loginResp)
 
 	// Create a book with the session cookie.
-	createResp := post(t, srv.URL+"/api/books", cookie, `{"title":"星星的故事"}`)
+	createResp := post(t, srv.URL+"/api/v1/books", cookie, `{"title":"星星的故事"}`)
 	var created models.Book
 	if err := json.NewDecoder(createResp.Body).Decode(&created); err != nil {
 		t.Fatal(err)
@@ -115,7 +115,7 @@ func TestBookFlow(t *testing.T) {
 	}
 
 	// List books; the created one must be present.
-	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/books", nil)
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/books", nil)
 	req.Header.Set("Cookie", cookie)
 	listResp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -134,34 +134,34 @@ func TestBookFlow(t *testing.T) {
 	}
 }
 
-// TestMeRequiresAuth verifies GET /api/me is behind RequireUser.
+// TestMeRequiresAuth verifies GET /api/v1/me is behind RequireUser.
 func TestMeRequiresAuth(t *testing.T) {
 	srv := httptest.NewServer(newTestRouter(t))
 	defer srv.Close()
 
-	resp, err := http.Get(srv.URL + "/api/me")
+	resp, err := http.Get(srv.URL + "/api/v1/me")
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusUnauthorized {
-		t.Fatalf("GET /api/me without session: want 401, got %d", resp.StatusCode)
+		t.Fatalf("GET /api/v1/me without session: want 401, got %d", resp.StatusCode)
 	}
 }
 
-// TestMeReturnsCredits verifies an authenticated GET /api/me returns the user's
+// TestMeReturnsCredits verifies an authenticated GET /api/v1/me returns the user's
 // credit balance (100 by default) and never leaks the password hash.
 func TestMeReturnsCredits(t *testing.T) {
 	srv := httptest.NewServer(newTestRouter(t))
 	defer srv.Close()
 
 	const creds = `{"nickname":"积分","password":"pw123456"}`
-	post(t, srv.URL+"/api/register", "", creds).Body.Close()
-	loginResp := post(t, srv.URL+"/api/login", "", creds)
+	post(t, srv.URL+"/api/v1/register", "", creds).Body.Close()
+	loginResp := post(t, srv.URL+"/api/v1/login", "", creds)
 	loginResp.Body.Close()
 	cookie := sessionCookie(t, loginResp)
 
-	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/me", nil)
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/v1/me", nil)
 	req.Header.Set("Cookie", cookie)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -169,7 +169,7 @@ func TestMeReturnsCredits(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("GET /api/me: want 200, got %d", resp.StatusCode)
+		t.Fatalf("GET /api/v1/me: want 200, got %d", resp.StatusCode)
 	}
 	var u models.User
 	if err := json.NewDecoder(resp.Body).Decode(&u); err != nil {

@@ -47,7 +47,7 @@ type AuthContextValue = {
   login: (nickname: string, password: string) => Promise<void>
   register: (nickname: string, password: string) => Promise<void>
   logout: () => Promise<void>
-  // 从 /api/me 拉取最新用户（含积分余额）并更新本地态，供出图/漫画化后刷新 header。
+  // 从 /api/v1/me 拉取最新用户（含积分余额）并更新本地态，供出图/漫画化后刷新 header。
   refreshUser: () => Promise<void>
 }
 
@@ -65,7 +65,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const login = useCallback(async (nickname: string, password: string) => {
-    const u = await api.post<User>('/api/login', { nickname, password })
+    const u = await api.post<User>('/api/v1/login', { nickname, password })
     setUser(u)
     setIsAuthed(true)
     persist({ authed: true, user: u })
@@ -74,7 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const register = useCallback(
     async (nickname: string, password: string) => {
       // 注册成功后自动登录，进入书架
-      await api.post<void>('/api/register', { nickname, password })
+      await api.post<void>('/api/v1/register', { nickname, password })
       await login(nickname, password)
     },
     [login],
@@ -95,7 +95,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
-      await api.post<void>('/api/logout')
+      await api.post<void>('/api/v1/logout')
     } catch {
       // 即使后端登出失败也清空本地态
     }

@@ -1,0 +1,1119 @@
+openapi: 3.1.0
+info:
+  title: oh-my-commic API
+  version: "1.0.0"
+  description: >
+    面向亲子的 AI 漫画书应用后端 API。所有业务端点位于版本化前缀 /api/v1 下；
+    健康探针 GET /api/health 保持不版本化（运维/CI 依赖其稳定路径）。
+    认证使用 cookie session（登录后自动 set `session` cookie），前端请求需带
+    credentials: 'include'。跨用户/不存在的资源一律返回 404（不泄露存在性）；
+    AI/上游错误返回 502（504 超时 / 429 限流）；积分不足返回 402。
+    错误响应统一为 `{"error": string}` 信封。图片经 /media/... 直接访问（不在本契约内）。
+
+servers:
+  - url: /
+
+tags:
+  - name: health
+  - name: auth
+  - name: books
+  - name: assets
+  - name: chapters
+  - name: panels
+  - name: story
+
+paths:
+  /api/health:
+    get:
+      tags: [health]
+      summary: 健康探针（不版本化）
+      description: 运维/CI 探活端点。始终公开、无需鉴权。
+      security: []
+      responses:
+        "200":
+          description: 服务健康
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [ok]
+                properties:
+                  ok:
+                    type: boolean
+
+  /api/v1/register:
+    post:
+      tags: [auth]
+      summary: 注册新用户
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Credentials"
+      responses:
+        "201":
+          description: 注册成功，返回新用户（含初始积分 100）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
+          description: 昵称已被占用
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /api/v1/login:
+    post:
+      tags: [auth]
+      summary: 登录
+      description: 成功后设置 HttpOnly 的 `session` cookie 并返回当前用户。
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Credentials"
+      responses:
+        "200":
+          description: 登录成功
+          headers:
+            Set-Cookie:
+              description: session cookie
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/logout:
+    post:
+      tags: [auth]
+      summary: 登出
+      description: 撤销当前 session 并清除 cookie。无 session 也视为成功。
+      security: []
+      responses:
+        "200":
+          $ref: "#/components/responses/OK"
+
+  /api/v1/me:
+    get:
+      tags: [auth]
+      summary: 当前登录用户（含实时积分余额）
+      responses:
+        "200":
+          description: 当前用户
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/books:
+    get:
+      tags: [books]
+      summary: 列出当前用户的书
+      responses:
+        "200":
+          description: 书列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Book"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags: [books]
+      summary: 新建书
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookInput"
+      responses:
+        "201":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Book"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /api/v1/books/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [books]
+      summary: 获取一本书
+      responses:
+        "200":
+          description: 书
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Book"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [books]
+      summary: 更新一本书
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/BookInput"
+      responses:
+        "200":
+          description: 更新后的书
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Book"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [books]
+      summary: 删除一本书
+      responses:
+        "200":
+          $ref: "#/components/responses/OK"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/books/{bookId}/upload:
+    parameters:
+      - $ref: "#/components/parameters/BookId"
+    post:
+      tags: [assets]
+      summary: 上传资产图片（png/jpg/webp，≤5MB）
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: 上传成功，返回本地媒体 URL
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [imageUrl]
+                properties:
+                  imageUrl:
+                    type: string
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/books/{bookId}/characters:
+    parameters:
+      - $ref: "#/components/parameters/BookId"
+    get:
+      tags: [assets]
+      summary: 列出书中的角色/宠物
+      responses:
+        "200":
+          description: 角色列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Character"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [assets]
+      summary: 新建角色/宠物
+      description: >
+        当 imageUrl 指向本书的本地上传（/media/{bookId}/...）时，后端会先漫画化
+        （消耗积分），可能返回 402/429/502/504。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CharacterInput"
+      responses:
+        "201":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Character"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "402":
+          $ref: "#/components/responses/PaymentRequired"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+        "504":
+          $ref: "#/components/responses/GatewayTimeout"
+
+  /api/v1/books/{bookId}/characters/{id}:
+    parameters:
+      - $ref: "#/components/parameters/BookId"
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [assets]
+      summary: 更新角色/宠物
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CharacterInput"
+      responses:
+        "200":
+          description: 更新后的角色
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Character"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "402":
+          $ref: "#/components/responses/PaymentRequired"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+        "504":
+          $ref: "#/components/responses/GatewayTimeout"
+    delete:
+      tags: [assets]
+      summary: 删除角色/宠物
+      responses:
+        "200":
+          $ref: "#/components/responses/OK"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/books/{bookId}/scenes:
+    parameters:
+      - $ref: "#/components/parameters/BookId"
+    get:
+      tags: [assets]
+      summary: 列出书中的场景
+      responses:
+        "200":
+          description: 场景列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Scene"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [assets]
+      summary: 新建场景
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SceneInput"
+      responses:
+        "201":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scene"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "402":
+          $ref: "#/components/responses/PaymentRequired"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+        "504":
+          $ref: "#/components/responses/GatewayTimeout"
+
+  /api/v1/books/{bookId}/scenes/{id}:
+    parameters:
+      - $ref: "#/components/parameters/BookId"
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [assets]
+      summary: 更新场景
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SceneInput"
+      responses:
+        "200":
+          description: 更新后的场景
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scene"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "402":
+          $ref: "#/components/responses/PaymentRequired"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+        "504":
+          $ref: "#/components/responses/GatewayTimeout"
+    delete:
+      tags: [assets]
+      summary: 删除场景
+      responses:
+        "200":
+          $ref: "#/components/responses/OK"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/books/{bookId}/chapters:
+    parameters:
+      - $ref: "#/components/parameters/BookId"
+    get:
+      tags: [chapters]
+      summary: 列出书的章节
+      responses:
+        "200":
+          description: 章节列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Chapter"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    post:
+      tags: [chapters]
+      summary: 新建章节（status=draft）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                title:
+                  type: string
+      responses:
+        "201":
+          description: 创建成功
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Chapter"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/books/{bookId}/cover-chapter:
+    parameters:
+      - $ref: "#/components/parameters/BookId"
+    post:
+      tags: [chapters]
+      summary: 获取或创建书的封面章
+      description: 返回书的唯一封面章，首次调用时创建。无论找到或新建都返回 200。
+      responses:
+        "200":
+          description: 封面章
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Chapter"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/chapters/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [chapters]
+      summary: 获取一个章节
+      responses:
+        "200":
+          description: 章节
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Chapter"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [chapters]
+      summary: 删除章节（级联删除其分镜）
+      responses:
+        "200":
+          $ref: "#/components/responses/OK"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/chapters/{id}/status:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [chapters]
+      summary: 更新章节状态（draft→storyboarding→rendering→done）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [status]
+              properties:
+                status:
+                  $ref: "#/components/schemas/ChapterStatus"
+      responses:
+        "200":
+          description: 更新后的章节
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Chapter"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/chapters/{id}/panels:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [panels]
+      summary: 列出章节分镜（按 order）
+      responses:
+        "200":
+          description: 分镜列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Panel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [panels]
+      summary: 整章替换分镜（后端重排 order 0..n-1）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/Panel"
+      responses:
+        "200":
+          description: 替换后的分镜列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Panel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/panels/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [panels]
+      summary: 更新单个分镜的可编辑字段
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Panel"
+      responses:
+        "200":
+          description: 更新后的分镜
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Panel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/panels/{id}/process:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [story]
+      summary: 第 2 段：从 content 解析结构字段 + image_prompt
+      responses:
+        "200":
+          description: 解析后的分镜
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Panel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+        "504":
+          $ref: "#/components/responses/GatewayTimeout"
+
+  /api/v1/panels/{id}/render:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [panels]
+      summary: 同步生成单格图片（吉卜力风），消耗积分
+      description: >
+        同步等待生图完成（可能 10-60s），imageUrl 落 /media/{bookId}/..，status=done；
+        失败时 status=failed。积分不足返回 402（此时不会调用生图接口）。
+      responses:
+        "200":
+          description: 生图后的分镜
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Panel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "402":
+          $ref: "#/components/responses/PaymentRequired"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+        "504":
+          $ref: "#/components/responses/GatewayTimeout"
+
+  /api/v1/chapters/{id}/storyboard-chat:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [story]
+      summary: 第 1 段：对话拆镜，产出 content-only 分镜并落库
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                messages:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/ConversationMsg"
+                panelCount:
+                  type: integer
+      responses:
+        "200":
+          description: 模型回复 + 落库的分镜
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [reply, panels]
+                properties:
+                  reply:
+                    type: string
+                  panels:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Panel"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+        "504":
+          $ref: "#/components/responses/GatewayTimeout"
+
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: session
+
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    BookId:
+      name: bookId
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+
+  responses:
+    OK:
+      description: 操作成功
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [ok]
+            properties:
+              ok:
+                type: boolean
+    BadRequest:
+      description: 请求参数/格式错误
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Unauthorized:
+      description: 未登录
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    PaymentRequired:
+      description: 积分不足
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: 资源不存在或跨用户访问（不泄露存在性）
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    RateLimited:
+      description: 上游限流
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    BadGateway:
+      description: AI/上游服务错误（不泄露上游细节）
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    GatewayTimeout:
+      description: 上游超时
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+
+    Credentials:
+      type: object
+      additionalProperties: false
+      required: [nickname, password]
+      properties:
+        nickname:
+          type: string
+        password:
+          type: string
+
+    User:
+      type: object
+      additionalProperties: false
+      required: [id, nickname, createdAt, credits]
+      properties:
+        id:
+          type: integer
+          format: int64
+        nickname:
+          type: string
+        createdAt:
+          type: string
+        credits:
+          type: integer
+
+    BookInput:
+      type: object
+      additionalProperties: false
+      properties:
+        title:
+          type: string
+        style:
+          type: string
+        summary:
+          type: string
+
+    Book:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - userId
+        - title
+        - coverUrl
+        - style
+        - summary
+        - isPublic
+        - createdAt
+        - updatedAt
+      properties:
+        id:
+          type: integer
+          format: int64
+        userId:
+          type: integer
+          format: int64
+        title:
+          type: string
+        coverUrl:
+          type: string
+        style:
+          type: string
+        summary:
+          type: string
+        isPublic:
+          type: boolean
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+
+    CharacterInput:
+      type: object
+      additionalProperties: false
+      properties:
+        type:
+          type: string
+          enum: [character, pet]
+        name:
+          type: string
+        gender:
+          type: string
+        age:
+          type: string
+        personality:
+          type: string
+        description:
+          type: string
+        imageUrl:
+          type: string
+
+    Character:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - bookId
+        - type
+        - name
+        - gender
+        - age
+        - personality
+        - description
+        - imageUrl
+      properties:
+        id:
+          type: integer
+          format: int64
+        bookId:
+          type: integer
+          format: int64
+        type:
+          type: string
+          enum: [character, pet]
+        name:
+          type: string
+        gender:
+          type: string
+        age:
+          type: string
+        personality:
+          type: string
+        description:
+          type: string
+        imageUrl:
+          type: string
+
+    SceneInput:
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        imageUrl:
+          type: string
+
+    Scene:
+      type: object
+      additionalProperties: false
+      required: [id, bookId, name, description, imageUrl]
+      properties:
+        id:
+          type: integer
+          format: int64
+        bookId:
+          type: integer
+          format: int64
+        name:
+          type: string
+        description:
+          type: string
+        imageUrl:
+          type: string
+
+    ChapterStatus:
+      type: string
+      enum: [draft, storyboarding, rendering, done]
+
+    ConversationMsg:
+      type: object
+      additionalProperties: false
+      required: [role, content]
+      properties:
+        role:
+          type: string
+        content:
+          type: string
+
+    Chapter:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - bookId
+        - order
+        - title
+        - status
+        - summary
+        - isCover
+        - createdAt
+        - conversation
+        - panelCount
+      properties:
+        id:
+          type: integer
+          format: int64
+        bookId:
+          type: integer
+          format: int64
+        order:
+          type: integer
+        title:
+          type: string
+        status:
+          $ref: "#/components/schemas/ChapterStatus"
+        summary:
+          type: string
+        isCover:
+          type: boolean
+        createdAt:
+          type: string
+        conversation:
+          type: [array, "null"]
+          items:
+            $ref: "#/components/schemas/ConversationMsg"
+        panelCount:
+          type: integer
+
+    Panel:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - chapterId
+        - order
+        - content
+        - caption
+        - characterIds
+        - sceneId
+        - imagePrompt
+        - imageUrl
+        - status
+        - location
+        - event
+        - charExpressions
+      properties:
+        id:
+          type: integer
+          format: int64
+        chapterId:
+          type: integer
+          format: int64
+        order:
+          type: integer
+        content:
+          type: string
+        caption:
+          type: string
+        characterIds:
+          type: [array, "null"]
+          items:
+            type: integer
+            format: int64
+        sceneId:
+          type: integer
+          format: int64
+        imagePrompt:
+          type: string
+        imageUrl:
+          type: string
+        status:
+          type: string
+        location:
+          type: string
+        event:
+          type: string
+        charExpressions:
+          type: [object, "null"]
+          additionalProperties:
+            type: string
+
+security:
+  - sessionCookie: []

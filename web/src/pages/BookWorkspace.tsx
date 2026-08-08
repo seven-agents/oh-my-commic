@@ -27,10 +27,10 @@ export default function BookWorkspace() {
       setLoadError('')
       try {
         const [b, chars, scs, chaps] = await Promise.all([
-          api.get<Book>(`/api/books/${bookId}`),
-          api.get<Character[]>(`/api/books/${bookId}/characters`),
-          api.get<Scene[]>(`/api/books/${bookId}/scenes`),
-          api.get<Chapter[]>(`/api/books/${bookId}/chapters`),
+          api.get<Book>(`/api/v1/books/${bookId}`),
+          api.get<Character[]>(`/api/v1/books/${bookId}/characters`),
+          api.get<Scene[]>(`/api/v1/books/${bookId}/scenes`),
+          api.get<Chapter[]>(`/api/v1/books/${bookId}/chapters`),
         ])
         if (!alive) return
         setBook(b)
@@ -52,8 +52,8 @@ export default function BookWorkspace() {
   const refetchAssets = useCallback(async () => {
     if (!bookId) return
     const [chars, scs] = await Promise.all([
-      api.get<Character[]>(`/api/books/${bookId}/characters`),
-      api.get<Scene[]>(`/api/books/${bookId}/scenes`),
+      api.get<Character[]>(`/api/v1/books/${bookId}/characters`),
+      api.get<Scene[]>(`/api/v1/books/${bookId}/scenes`),
     ])
     setCharacters(chars ?? [])
     setScenes(scs ?? [])

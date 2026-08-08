@@ -37,7 +37,7 @@ export function ImageUploadZone({ bookId, imageUrl, onUploaded }: ImageUploadZon
     setUploading(true)
     try {
       const { imageUrl: url } = await api.upload<{ imageUrl: string }>(
-        `/api/books/${bookId}/upload`,
+        `/api/v1/books/${bookId}/upload`,
         file,
       )
       onUploaded(url)

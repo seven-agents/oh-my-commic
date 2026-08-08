@@ -28,17 +28,17 @@ func NewHandler(svc *Service) *Handler {
 
 // Mount registers the story endpoints onto r using their absolute paths.
 //
-//	POST /api/chapters/{id}/storyboard-chat
-//	POST /api/panels/{id}/process
+//	POST /api/v1/chapters/{id}/storyboard-chat
+//	POST /api/v1/panels/{id}/process
 //
 // Like the sibling handlers, it does not attach auth.RequireUser: the caller
 // mounts this inside a group already wrapped with RequireUser.
 func (h *Handler) Mount(r chi.Router) {
-	r.Post("/api/chapters/{id}/storyboard-chat", h.StoryboardChat)
-	r.Post("/api/panels/{id}/process", h.ProcessPanel)
+	r.Post("/chapters/{id}/storyboard-chat", h.StoryboardChat)
+	r.Post("/panels/{id}/process", h.ProcessPanel)
 }
 
-// storyboardChatRequest is the body for POST /api/chapters/{id}/storyboard-chat.
+// storyboardChatRequest is the body for POST /api/v1/chapters/{id}/storyboard-chat.
 // Messages is the {role,content} conversation history. PanelCount is optional:
 // when omitted or 0, the prompt uses its default frame range instead of a
 // specific target.
@@ -54,7 +54,7 @@ type storyboardChatResponse struct {
 	Panels []models.Panel `json:"panels"`
 }
 
-// StoryboardChat handles POST /api/chapters/{id}/storyboard-chat.
+// StoryboardChat handles POST /api/v1/chapters/{id}/storyboard-chat.
 func (h *Handler) StoryboardChat(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
 	chapterID, ok := parseID(w, r)
@@ -78,7 +78,7 @@ func (h *Handler) StoryboardChat(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, storyboardChatResponse{Reply: reply, Panels: panels})
 }
 
-// ProcessPanel handles POST /api/panels/{id}/process: the stage-2 per-frame
+// ProcessPanel handles POST /api/v1/panels/{id}/process: the stage-2 per-frame
 // decomposition. It returns the updated panel with its freshly parsed structured
 // fields.
 func (h *Handler) ProcessPanel(w http.ResponseWriter, r *http.Request) {

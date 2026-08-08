@@ -53,11 +53,16 @@ type Deps struct {
 
 // NewRouter builds the application router from deps.
 //
+// All business endpoints live under the versioned /api/v1 prefix (mounted via a
+// single chi.Route group so a future /api/v2 can be added alongside without
+// touching the individual handlers). The health probe is intentionally left
+// unversioned so ops tooling (docker-compose, CI) can rely on a stable path.
+//
 // Route groups:
-//   - GET /api/health                          public
-//   - /api/register, /api/login, /api/logout   public (auth)
-//   - /api/books*                              protected by RequireUser
-//   - /media/*                                 static asset serving
+//   - GET /api/health                                   public (unversioned probe)
+//   - /api/v1/register, /api/v1/login, /api/v1/logout   public (auth)
+//   - /api/v1/me, /api/v1/books*, ...                   protected by RequireUser
+//   - /media/*                                          static asset serving
 func NewRouter(deps Deps) http.Handler {
 	r := chi.NewRouter()
 
@@ -65,33 +70,39 @@ func NewRouter(deps Deps) http.Handler {
 	// (including the SPA/static catch-all) are visible in the server log.
 	r.Use(requestLogger)
 
+	// Unversioned health probe (docker-compose + CI depend on this stable path).
 	r.Get("/api/health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
 
-	// Public auth routes.
-	deps.Auth.Mount(r)
+	// All business endpoints are versioned under /api/v1. Handlers mount using
+	// resource-relative paths (e.g. "/books"), so the effective path becomes
+	// "/api/v1/books".
+	r.Route("/api/v1", func(v1 chi.Router) {
+		// Public auth routes.
+		deps.Auth.Mount(v1)
 
-	// Protected book routes: everything in this group requires a valid session.
-	r.Group(func(pr chi.Router) {
-		pr.Use(auth.RequireUser(deps.Session))
-		deps.Auth.MountProtected(pr)
-		deps.Book.Mount(pr)
-		if deps.Asset != nil {
-			deps.Asset.Mount(pr)
-		}
-		if deps.Chapter != nil {
-			deps.Chapter.Mount(pr)
-		}
-		if deps.Panel != nil {
-			deps.Panel.Mount(pr)
-		}
-		if deps.Story != nil {
-			deps.Story.Mount(pr)
-		}
-		if deps.Render != nil {
-			deps.Render.Mount(pr)
-		}
+		// Protected routes: everything in this group requires a valid session.
+		v1.Group(func(pr chi.Router) {
+			pr.Use(auth.RequireUser(deps.Session))
+			deps.Auth.MountProtected(pr)
+			deps.Book.Mount(pr)
+			if deps.Asset != nil {
+				deps.Asset.Mount(pr)
+			}
+			if deps.Chapter != nil {
+				deps.Chapter.Mount(pr)
+			}
+			if deps.Panel != nil {
+				deps.Panel.Mount(pr)
+			}
+			if deps.Story != nil {
+				deps.Story.Mount(pr)
+			}
+			if deps.Render != nil {
+				deps.Render.Mount(pr)
+			}
+		})
 	})
 
 	if deps.Media != nil {

@@ -26,7 +26,7 @@ func mount(env *storyTestEnv, userID int64) http.Handler {
 			next.ServeHTTP(w, req.WithContext(ctx))
 		})
 	})
-	h.Mount(r)
+	r.Route("/api/v1", func(v1 chi.Router) { h.Mount(v1) })
 	return r
 }
 
@@ -37,7 +37,7 @@ func TestStoryboardChatHandlerOK(t *testing.T) {
 	ch := env.newChapter(t, 1)
 	srv := mount(env, 1)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/chapters/"+itoa(ch.ID)+storyboardChatPath,
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/chapters/"+itoa(ch.ID)+storyboardChatPath,
 		strings.NewReader(`{"messages":[{"role":"user","content":"hi"}],"panelCount":3}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -62,7 +62,7 @@ func TestStoryboardChatHandlerOK(t *testing.T) {
 	}
 }
 
-// TestProcessPanelHandlerOK verifies POST /api/panels/{id}/process decomposes a
+// TestProcessPanelHandlerOK verifies POST /api/v1/panels/{id}/process decomposes a
 // seeded content-only panel and returns the updated structured panel.
 func TestProcessPanelHandlerOK(t *testing.T) {
 	env := newStoryTestEnv(t, `{"reply":"ok","panels":[{"content":"小狐狸在森林里"}]}`)
@@ -74,7 +74,7 @@ func TestProcessPanelHandlerOK(t *testing.T) {
 	env.setContent(`{"location":"森林","sceneId":0,"characters":[],"event":"漫步","caption":"走走","imagePrompt":"forest"}`)
 
 	srv := mount(env, 1)
-	req := httptest.NewRequest(http.MethodPost, "/api/panels/"+itoa(seeded[0].ID)+"/process", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/panels/"+itoa(seeded[0].ID)+"/process", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -105,7 +105,7 @@ func TestProcessPanelHandlerCrossUser404(t *testing.T) {
 	}
 
 	srv := mount(env, 2)
-	req := httptest.NewRequest(http.MethodPost, "/api/panels/"+itoa(seeded[0].ID)+"/process", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/panels/"+itoa(seeded[0].ID)+"/process", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -119,7 +119,7 @@ func TestStoryboardChatHandlerCrossUser404(t *testing.T) {
 	ch := env.newChapter(t, 1)
 	srv := mount(env, 2) // user 2 hits user 1's chapter
 
-	req := httptest.NewRequest(http.MethodPost, "/api/chapters/"+itoa(ch.ID)+storyboardChatPath,
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/chapters/"+itoa(ch.ID)+storyboardChatPath,
 		strings.NewReader(`{"messages":[]}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -134,7 +134,7 @@ func TestStoryboardChatHandlerBadJSON400(t *testing.T) {
 	ch := env.newChapter(t, 1)
 	srv := mount(env, 1)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/chapters/"+itoa(ch.ID)+storyboardChatPath,
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/chapters/"+itoa(ch.ID)+storyboardChatPath,
 		strings.NewReader(`{bad`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -148,7 +148,7 @@ func TestStoryboardChatHandlerBadID400(t *testing.T) {
 	env := newStoryTestEnv(t, `{"reply":"hi","panels":[]}`)
 	srv := mount(env, 1)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/chapters/0"+storyboardChatPath,
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/chapters/0"+storyboardChatPath,
 		strings.NewReader(`{"messages":[]}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
@@ -163,7 +163,7 @@ func TestStoryboardChatHandlerAIError502(t *testing.T) {
 	ch := env.newChapter(t, 1)
 	srv := mount(env, 1)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/chapters/"+itoa(ch.ID)+storyboardChatPath,
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/chapters/"+itoa(ch.ID)+storyboardChatPath,
 		strings.NewReader(`{"messages":[]}`))
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)

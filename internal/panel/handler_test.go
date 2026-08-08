@@ -44,7 +44,7 @@ func newHandlerTestEnv(t *testing.T) *handlerTestEnv {
 	h := NewHandler(NewService(NewRepo(d), chapterSvc))
 
 	r := chi.NewRouter()
-	h.Mount(r)
+	r.Route("/api/v1", func(v1 chi.Router) { h.Mount(v1) })
 	return &handlerTestEnv{books: books, chapters: chapterSvc, router: r}
 }
 
@@ -83,7 +83,7 @@ func (e *handlerTestEnv) do(userID int64, method, path string, body any) *httpte
 func TestHTTPReplaceListUpdate(t *testing.T) {
 	env := newHandlerTestEnv(t)
 	ch := env.newChapter(t, 1)
-	base := "/api/chapters/" + strconv.FormatInt(ch.ID, 10) + "/panels"
+	base := "/api/v1/chapters/" + strconv.FormatInt(ch.ID, 10) + "/panels"
 
 	rec := env.do(1, http.MethodPut, base, []models.Panel{
 		{Caption: "A", CharacterIDs: []int64{2, 3}},
@@ -112,7 +112,7 @@ func TestHTTPReplaceListUpdate(t *testing.T) {
 		t.Fatalf("CharacterIDs JSON 往返错: %+v", list)
 	}
 
-	rec = env.do(1, http.MethodPut, "/api/panels/"+strconv.FormatInt(list[0].ID, 10), models.Panel{Caption: "edited", SceneID: 9})
+	rec = env.do(1, http.MethodPut, "/api/v1/panels/"+strconv.FormatInt(list[0].ID, 10), models.Panel{Caption: "edited", SceneID: 9})
 	if rec.Code != http.StatusOK {
 		t.Fatalf("update expected 200, got %d", rec.Code)
 	}
@@ -130,7 +130,7 @@ func TestHTTPReplaceListUpdate(t *testing.T) {
 func TestHTTPCrossUser404(t *testing.T) {
 	env := newHandlerTestEnv(t)
 	ch := env.newChapter(t, 1)
-	base := "/api/chapters/" + strconv.FormatInt(ch.ID, 10) + "/panels"
+	base := "/api/v1/chapters/" + strconv.FormatInt(ch.ID, 10) + "/panels"
 	create := env.do(1, http.MethodPut, base, []models.Panel{{Caption: "p"}})
 	var out []models.Panel
 	if err := json.Unmarshal(create.Body.Bytes(), &out); err != nil {
@@ -144,7 +144,7 @@ func TestHTTPCrossUser404(t *testing.T) {
 	}{
 		{http.MethodGet, base, nil},
 		{http.MethodPut, base, []models.Panel{{Caption: "越权"}}},
-		{http.MethodPut, "/api/panels/" + panelID, models.Panel{Caption: "越权"}},
+		{http.MethodPut, "/api/v1/panels/" + panelID, models.Panel{Caption: "越权"}},
 	}
 	for _, tc := range cases {
 		rec := env.do(2, tc.method, tc.path, tc.body)
@@ -158,15 +158,15 @@ func TestHTTPCrossUser404(t *testing.T) {
 func TestHTTPBadInput(t *testing.T) {
 	env := newHandlerTestEnv(t)
 
-	if rec := env.do(1, http.MethodGet, "/api/chapters/abc/panels", nil); rec.Code != http.StatusBadRequest {
+	if rec := env.do(1, http.MethodGet, "/api/v1/chapters/abc/panels", nil); rec.Code != http.StatusBadRequest {
 		t.Fatalf("bad chapter id expected 400, got %d", rec.Code)
 	}
-	if rec := env.do(1, http.MethodPut, "/api/panels/abc", models.Panel{}); rec.Code != http.StatusBadRequest {
+	if rec := env.do(1, http.MethodPut, "/api/v1/panels/abc", models.Panel{}); rec.Code != http.StatusBadRequest {
 		t.Fatalf("bad panel id expected 400, got %d", rec.Code)
 	}
 
 	ch := env.newChapter(t, 1)
-	req := httptest.NewRequest(http.MethodPut, "/api/chapters/"+strconv.FormatInt(ch.ID, 10)+"/panels", bytes.NewBufferString("{bad json"))
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/chapters/"+strconv.FormatInt(ch.ID, 10)+"/panels", bytes.NewBufferString("{bad json"))
 	req = req.WithContext(auth.WithUserID(req.Context(), 1))
 	rec := httptest.NewRecorder()
 	env.router.ServeHTTP(rec, req)

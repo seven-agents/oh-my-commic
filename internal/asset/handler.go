@@ -71,34 +71,34 @@ func belongsToBook(url string, bookID int64) bool {
 
 // Mount registers the asset endpoints onto r using their absolute paths.
 //
-//	POST   /api/books/{bookId}/upload
-//	GET    /api/books/{bookId}/characters
-//	POST   /api/books/{bookId}/characters
-//	PUT    /api/books/{bookId}/characters/{id}
-//	DELETE /api/books/{bookId}/characters/{id}
-//	GET    /api/books/{bookId}/scenes
-//	POST   /api/books/{bookId}/scenes
-//	PUT    /api/books/{bookId}/scenes/{id}
-//	DELETE /api/books/{bookId}/scenes/{id}
+//	POST   /api/v1/books/{bookId}/upload
+//	GET    /api/v1/books/{bookId}/characters
+//	POST   /api/v1/books/{bookId}/characters
+//	PUT    /api/v1/books/{bookId}/characters/{id}
+//	DELETE /api/v1/books/{bookId}/characters/{id}
+//	GET    /api/v1/books/{bookId}/scenes
+//	POST   /api/v1/books/{bookId}/scenes
+//	PUT    /api/v1/books/{bookId}/scenes/{id}
+//	DELETE /api/v1/books/{bookId}/scenes/{id}
 //
 // It deliberately does NOT attach auth.RequireUser: the caller mounts these
 // routes inside a group already wrapped with RequireUser, so every handler can
 // rely on a valid user ID being present in the context.
 func (h *Handler) Mount(r chi.Router) {
-	r.Post("/api/books/{bookId}/upload", h.Upload)
+	r.Post("/books/{bookId}/upload", h.Upload)
 
-	r.Get("/api/books/{bookId}/characters", h.ListCharacters)
-	r.Post("/api/books/{bookId}/characters", h.CreateCharacter)
-	r.Put("/api/books/{bookId}/characters/{id}", h.UpdateCharacter)
-	r.Delete("/api/books/{bookId}/characters/{id}", h.DeleteCharacter)
+	r.Get("/books/{bookId}/characters", h.ListCharacters)
+	r.Post("/books/{bookId}/characters", h.CreateCharacter)
+	r.Put("/books/{bookId}/characters/{id}", h.UpdateCharacter)
+	r.Delete("/books/{bookId}/characters/{id}", h.DeleteCharacter)
 
-	r.Get("/api/books/{bookId}/scenes", h.ListScenes)
-	r.Post("/api/books/{bookId}/scenes", h.CreateScene)
-	r.Put("/api/books/{bookId}/scenes/{id}", h.UpdateScene)
-	r.Delete("/api/books/{bookId}/scenes/{id}", h.DeleteScene)
+	r.Get("/books/{bookId}/scenes", h.ListScenes)
+	r.Post("/books/{bookId}/scenes", h.CreateScene)
+	r.Put("/books/{bookId}/scenes/{id}", h.UpdateScene)
+	r.Delete("/books/{bookId}/scenes/{id}", h.DeleteScene)
 }
 
-// Upload handles POST /api/books/{bookId}/upload. It accepts a multipart form
+// Upload handles POST /api/v1/books/{bookId}/upload. It accepts a multipart form
 // with a single file field named "file", validates that the payload is an
 // allowed image type (by sniffing its content, not trusting the client), stores
 // it under the book, and responds {"imageUrl": "/media/..."}.
@@ -158,7 +158,7 @@ func (h *Handler) Upload(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"imageUrl": url})
 }
 
-// ListCharacters handles GET /api/books/{bookId}/characters.
+// ListCharacters handles GET /api/v1/books/{bookId}/characters.
 func (h *Handler) ListCharacters(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
 	bookID, ok := parseBookID(w, r)
@@ -173,7 +173,7 @@ func (h *Handler) ListCharacters(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, list)
 }
 
-// CreateCharacter handles POST /api/books/{bookId}/characters.
+// CreateCharacter handles POST /api/v1/books/{bookId}/characters.
 func (h *Handler) CreateCharacter(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
 	bookID, ok := parseBookID(w, r)
@@ -215,7 +215,7 @@ func (h *Handler) CreateCharacter(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, created)
 }
 
-// UpdateCharacter handles PUT /api/books/{bookId}/characters/{id}.
+// UpdateCharacter handles PUT /api/v1/books/{bookId}/characters/{id}.
 func (h *Handler) UpdateCharacter(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
 	id, ok := parseAssetID(w, r)
@@ -256,7 +256,7 @@ func (h *Handler) UpdateCharacter(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, updated)
 }
 
-// DeleteCharacter handles DELETE /api/books/{bookId}/characters/{id}.
+// DeleteCharacter handles DELETE /api/v1/books/{bookId}/characters/{id}.
 func (h *Handler) DeleteCharacter(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
 	id, ok := parseAssetID(w, r)
@@ -270,7 +270,7 @@ func (h *Handler) DeleteCharacter(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// ListScenes handles GET /api/books/{bookId}/scenes.
+// ListScenes handles GET /api/v1/books/{bookId}/scenes.
 func (h *Handler) ListScenes(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
 	bookID, ok := parseBookID(w, r)
@@ -285,7 +285,7 @@ func (h *Handler) ListScenes(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, list)
 }
 
-// CreateScene handles POST /api/books/{bookId}/scenes.
+// CreateScene handles POST /api/v1/books/{bookId}/scenes.
 func (h *Handler) CreateScene(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
 	bookID, ok := parseBookID(w, r)
@@ -322,7 +322,7 @@ func (h *Handler) CreateScene(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, created)
 }
 
-// UpdateScene handles PUT /api/books/{bookId}/scenes/{id}.
+// UpdateScene handles PUT /api/v1/books/{bookId}/scenes/{id}.
 func (h *Handler) UpdateScene(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
 	id, ok := parseAssetID(w, r)
@@ -360,7 +360,7 @@ func (h *Handler) UpdateScene(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, updated)
 }
 
-// DeleteScene handles DELETE /api/books/{bookId}/scenes/{id}.
+// DeleteScene handles DELETE /api/v1/books/{bookId}/scenes/{id}.
 func (h *Handler) DeleteScene(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
 	id, ok := parseAssetID(w, r)

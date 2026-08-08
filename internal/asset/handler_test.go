@@ -93,7 +93,7 @@ func newHandlerTestEnv(t *testing.T) *handlerTestEnv {
 	h := NewHandler(svc, store, comic)
 
 	r := chi.NewRouter()
-	h.Mount(r)
+	r.Route("/api/v1", func(v1 chi.Router) { h.Mount(v1) })
 	return &handlerTestEnv{handler: h, books: books, users: users, store: store, editor: editor, imgSrv: imgSrv, router: r}
 }
 
@@ -147,7 +147,7 @@ func uploadRequest(t *testing.T, bookID int64, content []byte) *http.Request {
 		t.Fatalf("close writer: %v", err)
 	}
 
-	url := "/api/books/" + strconv.FormatInt(bookID, 10) + "/upload"
+	url := "/api/v1/books/" + strconv.FormatInt(bookID, 10) + "/upload"
 	req := httptest.NewRequest(http.MethodPost, url, &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	return req
@@ -202,7 +202,7 @@ func TestUploadCrossUserBlocked(t *testing.T) {
 func TestCharacterCreateAndListViaHTTP(t *testing.T) {
 	env := newHandlerTestEnv(t)
 	b, _ := env.books.Create(1, "书", "ghibli", "")
-	base := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
+	base := "/api/v1/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
 
 	body := strings.NewReader(`{"name":"狐狸","type":"character","description":"聪明"}`)
 	req := httptest.NewRequest(http.MethodPost, base, body)
@@ -234,7 +234,7 @@ func TestCharacterCreateAndListViaHTTP(t *testing.T) {
 func TestCharacterCreateCrossUser404(t *testing.T) {
 	env := newHandlerTestEnv(t)
 	b, _ := env.books.Create(1, "书", "ghibli", "")
-	base := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
+	base := "/api/v1/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
 
 	body := strings.NewReader(`{"name":"入侵","type":"character"}`)
 	req := httptest.NewRequest(http.MethodPost, base, body)
@@ -247,7 +247,7 @@ func TestCharacterCreateCrossUser404(t *testing.T) {
 func TestCharacterUpdateDeleteCrossUser404(t *testing.T) {
 	env := newHandlerTestEnv(t)
 	b, _ := env.books.Create(1, "书", "ghibli", "")
-	base := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
+	base := "/api/v1/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
 
 	// Owner creates a character.
 	body := strings.NewReader(`{"name":"狐狸","type":"character","description":"原始"}`)
@@ -285,7 +285,7 @@ func TestCharacterUpdateDeleteCrossUser404(t *testing.T) {
 func TestSceneCreateAndCrossUser(t *testing.T) {
 	env := newHandlerTestEnv(t)
 	b, _ := env.books.Create(1, "书", "ghibli", "")
-	base := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/scenes"
+	base := "/api/v1/books/" + strconv.FormatInt(b.ID, 10) + "/scenes"
 
 	// Owner creates a scene → 201.
 	body := strings.NewReader(`{"name":"森林","description":"原始"}`)
@@ -320,7 +320,7 @@ func TestSceneCreateAndCrossUser(t *testing.T) {
 func TestCharacterOwnerUpdateDelete(t *testing.T) {
 	env := newHandlerTestEnv(t)
 	b, _ := env.books.Create(1, "书", "ghibli", "")
-	base := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
+	base := "/api/v1/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
 
 	rec := env.serveAs(t, httptest.NewRequest(http.MethodPost, base,
 		strings.NewReader(`{"name":"狐狸","type":"character","description":"原始"}`)), 1)
@@ -348,7 +348,7 @@ func TestCharacterOwnerUpdateDelete(t *testing.T) {
 func TestSceneListAndOwnerUpdateDelete(t *testing.T) {
 	env := newHandlerTestEnv(t)
 	b, _ := env.books.Create(1, "书", "ghibli", "")
-	base := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/scenes"
+	base := "/api/v1/books/" + strconv.FormatInt(b.ID, 10) + "/scenes"
 
 	rec := env.serveAs(t, httptest.NewRequest(http.MethodPost, base,
 		strings.NewReader(`{"name":"森林","description":"原始"}`)), 1)
@@ -386,7 +386,7 @@ func TestUploadMissingFileField400(t *testing.T) {
 	// A field, but not named "file".
 	_ = mw.WriteField("other", "x")
 	_ = mw.Close()
-	url := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/upload"
+	url := "/api/v1/books/" + strconv.FormatInt(b.ID, 10) + "/upload"
 	req := httptest.NewRequest(http.MethodPost, url, &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 
@@ -410,7 +410,7 @@ func TestUploadEmptyFile400(t *testing.T) {
 func TestBadJSONBody400(t *testing.T) {
 	env := newHandlerTestEnv(t)
 	b, _ := env.books.Create(1, "书", "ghibli", "")
-	base := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
+	base := "/api/v1/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
 
 	rec := env.serveAs(t, httptest.NewRequest(http.MethodPost, base,
 		strings.NewReader(`{not json`)), 1)
@@ -422,7 +422,7 @@ func TestBadJSONBody400(t *testing.T) {
 func TestInvalidAssetID400(t *testing.T) {
 	env := newHandlerTestEnv(t)
 	b, _ := env.books.Create(1, "书", "ghibli", "")
-	url := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/characters/abc"
+	url := "/api/v1/books/" + strconv.FormatInt(b.ID, 10) + "/characters/abc"
 
 	rec := env.serveAs(t, httptest.NewRequest(http.MethodDelete, url, nil), 1)
 	if rec.Code != http.StatusBadRequest {
@@ -433,7 +433,7 @@ func TestInvalidAssetID400(t *testing.T) {
 func TestCreateCharacterComicifiesUpload(t *testing.T) {
 	env := newHandlerTestEnv(t)
 	b, _ := env.books.Create(1, "书", "ghibli", "")
-	base := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
+	base := "/api/v1/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
 	upload := env.seedUpload(t, b.ID)
 
 	body := `{"name":"狐狸","type":"character","imageUrl":"` + upload + `"}`
@@ -454,7 +454,7 @@ func TestCreateCharacterComicifiesUpload(t *testing.T) {
 func TestCreateCharacterSkipsComicifyWhenNoImage(t *testing.T) {
 	env := newHandlerTestEnv(t)
 	b, _ := env.books.Create(1, "书", "ghibli", "")
-	base := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
+	base := "/api/v1/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
 
 	rec := env.serveAs(t, httptest.NewRequest(http.MethodPost, base,
 		strings.NewReader(`{"name":"狐狸","type":"character"}`)), 1)
@@ -470,7 +470,7 @@ func TestCreateCharacterComicifyErrorIs502(t *testing.T) {
 	env := newHandlerTestEnv(t)
 	env.editor.err = errors.New("upstream boom")
 	b, _ := env.books.Create(1, "书", "ghibli", "")
-	base := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
+	base := "/api/v1/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
 	upload := env.seedUpload(t, b.ID)
 
 	body := `{"name":"狐狸","type":"character","imageUrl":"` + upload + `"}`
@@ -497,7 +497,7 @@ func TestCreateCharacterInsufficientCreditsIs402(t *testing.T) {
 	}
 
 	b, _ := env.books.Create(1, "书", "ghibli", "")
-	base := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
+	base := "/api/v1/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
 	upload := env.seedUpload(t, b.ID)
 
 	body := `{"name":"狐狸","type":"character","imageUrl":"` + upload + `"}`
@@ -516,7 +516,7 @@ func TestCreateCharacterInsufficientCreditsIs402(t *testing.T) {
 func TestUpdateCharacterComicifiesOnlyNewUpload(t *testing.T) {
 	env := newHandlerTestEnv(t)
 	b, _ := env.books.Create(1, "书", "ghibli", "")
-	base := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
+	base := "/api/v1/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
 
 	// Create with an initial upload → 1 comicify call, stored stylized url.
 	upload1 := env.seedUpload(t, b.ID)
@@ -564,7 +564,7 @@ func TestCreateCharacterRejectsForeignBookImage(t *testing.T) {
 	// A raw upload physically stored under the OTHER user's book.
 	foreignUpload := env.seedUpload(t, other.ID)
 
-	base := "/api/books/" + strconv.FormatInt(mine.ID, 10) + "/characters"
+	base := "/api/v1/books/" + strconv.FormatInt(mine.ID, 10) + "/characters"
 	body := `{"name":"狐狸","type":"character","imageUrl":"` + foreignUpload + `"}`
 	rec := env.serveAs(t, httptest.NewRequest(http.MethodPost, base, strings.NewReader(body)), 1)
 	if rec.Code != http.StatusBadRequest {
@@ -579,7 +579,7 @@ func TestUpdateCharacterRejectsForeignBookImage(t *testing.T) {
 	env := newHandlerTestEnv(t)
 	mine, _ := env.books.Create(1, "我的书", "ghibli", "")
 	other, _ := env.books.Create(2, "别人的书", "ghibli", "")
-	base := "/api/books/" + strconv.FormatInt(mine.ID, 10) + "/characters"
+	base := "/api/v1/books/" + strconv.FormatInt(mine.ID, 10) + "/characters"
 
 	// Create a plain character (no image) owned by user 1.
 	rec := env.serveAs(t, httptest.NewRequest(http.MethodPost, base,
@@ -602,7 +602,7 @@ func TestUpdateCharacterRejectsForeignBookImage(t *testing.T) {
 func TestCreateSceneComicifiesUpload(t *testing.T) {
 	env := newHandlerTestEnv(t)
 	b, _ := env.books.Create(1, "书", "ghibli", "")
-	base := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/scenes"
+	base := "/api/v1/books/" + strconv.FormatInt(b.ID, 10) + "/scenes"
 	upload := env.seedUpload(t, b.ID)
 
 	body := `{"name":"森林","imageUrl":"` + upload + `"}`
@@ -624,7 +624,7 @@ func TestUploadInvalidBookID400(t *testing.T) {
 	env := newHandlerTestEnv(t)
 	req := uploadRequest(t, 0, tinyPNG)
 	// bookId 0 in path -> parseBookID rejects.
-	req = httptest.NewRequest(http.MethodPost, "/api/books/abc/upload", req.Body)
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/books/abc/upload", req.Body)
 	req.Header.Set("Content-Type", "multipart/form-data; boundary=x")
 	rec := env.serveAs(t, req, 1)
 	if rec.Code != http.StatusBadRequest {

@@ -40,6 +40,7 @@ docker buildx build --platform linux/amd64 -t oh-my-commic:latest --load .
 - **错误处理**：`%w` 包裹；AI/上游错误 → 通用 **502**，**绝不把 API key 或上游 body 返回给客户端 / 打日志**。
 - **提示词**：只在 `internal/ai/prompts.go`、`internal/render/service.go`(stylePrefix+buildPrompt)、`internal/comicify/prompts.go`。改提示词看 `docs/ARCHITECTURE-AND-PROMPTS.md`。
 - **迁移**：只用幂等 `ALTER TABLE ADD COLUMN`（`isDuplicateColumn` 容错），旧库不重建。
+- **API 版本化**：所有业务端点在 `/api/v1/*`（handler 用**资源相对路径** mount，版本前缀集中在 `internal/httpx/router.go` 的 `r.Route("/api/v1", ...)`）；`GET /api/health` **不**版本化。**改任何 `/api/v1/*` 端点（路径/字段/状态码）必须同步更新 `docs/openapi.yaml`（单一真相源），否则契约 E2E（`test/contract`）会红。**
 - **git**：每功能一分支，完成后 `--no-ff` 合并回 main。提交信息中文 `type: 描述`。`.env`/`*.db`/`web/dist`/`node_modules` 均 gitignore，绝不入库/入镜像。
 
 ## 关键数据模型

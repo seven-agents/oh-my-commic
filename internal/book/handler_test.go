@@ -38,7 +38,7 @@ func TestHandlerCreateAndList(t *testing.T) {
 	h, _ := newTestHandler(t)
 
 	body := strings.NewReader(`{"title":"我的书","style":"","summary":"简介"}`)
-	req := asUser(httptest.NewRequest(http.MethodPost, "/api/books", body), 1)
+	req := asUser(httptest.NewRequest(http.MethodPost, "/api/v1/books", body), 1)
 	rec := do(t, h, req)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create status = %d, want 201: %s", rec.Code, rec.Body)
@@ -51,7 +51,7 @@ func TestHandlerCreateAndList(t *testing.T) {
 		t.Fatalf("unexpected created book: %+v", created)
 	}
 
-	req = asUser(httptest.NewRequest(http.MethodGet, "/api/books", nil), 1)
+	req = asUser(httptest.NewRequest(http.MethodGet, "/api/v1/books", nil), 1)
 	rec = do(t, h, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("list status = %d, want 200", rec.Code)
@@ -69,7 +69,7 @@ func TestHandlerCreateEmptyTitle400(t *testing.T) {
 	h, _ := newTestHandler(t)
 
 	body := strings.NewReader(`{"title":"   ","style":"ghibli","summary":""}`)
-	req := asUser(httptest.NewRequest(http.MethodPost, "/api/books", body), 1)
+	req := asUser(httptest.NewRequest(http.MethodPost, "/api/v1/books", body), 1)
 	rec := do(t, h, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body)
@@ -81,7 +81,7 @@ func TestHandlerCrossUserGet404(t *testing.T) {
 	b, _ := repo.Create(1, "user1 的书", "ghibli", "")
 
 	// User 2 requesting user 1's book must get 404, not the book.
-	url := "/api/books/" + strconv.FormatInt(b.ID, 10)
+	url := "/api/v1/books/" + strconv.FormatInt(b.ID, 10)
 	req := asUser(httptest.NewRequest(http.MethodGet, url, nil), 2)
 	rec := do(t, h, req)
 	if rec.Code != http.StatusNotFound {
@@ -100,7 +100,7 @@ func TestHandlerCrossUserDelete404(t *testing.T) {
 	h, repo := newTestHandler(t)
 	b, _ := repo.Create(1, "user1 的书", "ghibli", "")
 
-	url := "/api/books/" + strconv.FormatInt(b.ID, 10)
+	url := "/api/v1/books/" + strconv.FormatInt(b.ID, 10)
 	req := asUser(httptest.NewRequest(http.MethodDelete, url, nil), 2)
 	rec := do(t, h, req)
 	if rec.Code != http.StatusNotFound {
@@ -117,7 +117,7 @@ func TestHandlerUpdateRoundTrip(t *testing.T) {
 	h, repo := newTestHandler(t)
 	b, _ := repo.Create(1, "旧", "ghibli", "")
 
-	url := "/api/books/" + strconv.FormatInt(b.ID, 10)
+	url := "/api/v1/books/" + strconv.FormatInt(b.ID, 10)
 	body := strings.NewReader(`{"title":"新","style":"manga","summary":"x"}`)
 	req := asUser(httptest.NewRequest(http.MethodPut, url, body), 1)
 	rec := do(t, h, req)
@@ -133,7 +133,7 @@ func TestHandlerUpdateRoundTrip(t *testing.T) {
 func TestHandlerInvalidID400(t *testing.T) {
 	h, _ := newTestHandler(t)
 
-	req := asUser(httptest.NewRequest(http.MethodGet, "/api/books/abc", nil), 1)
+	req := asUser(httptest.NewRequest(http.MethodGet, "/api/v1/books/abc", nil), 1)
 	rec := do(t, h, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
@@ -146,7 +146,7 @@ func TestHandlerNoUserContext(t *testing.T) {
 	h, repo := newTestHandler(t)
 	b, _ := repo.Create(1, "私有", "ghibli", "")
 
-	url := "/api/books/" + strconv.FormatInt(b.ID, 10)
+	url := "/api/v1/books/" + strconv.FormatInt(b.ID, 10)
 	// No asUser wrapper: context carries user id 0.
 	req := httptest.NewRequest(http.MethodGet, url, nil).WithContext(context.Background())
 	rec := do(t, h, req)

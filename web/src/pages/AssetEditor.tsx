@@ -53,11 +53,11 @@ export default function AssetEditor() {
     ;(async () => {
       try {
         if (isScene) {
-          const list = await api.get<Scene[]>(`/api/books/${bookId}/scenes`)
+          const list = await api.get<Scene[]>(`/api/v1/books/${bookId}/scenes`)
           const s = (list ?? []).find((x) => String(x.id) === assetId)
           if (alive && s) setForm({ ...EMPTY_FORM, name: s.name, description: s.description, imageUrl: s.imageUrl })
         } else {
-          const list = await api.get<Character[]>(`/api/books/${bookId}/characters`)
+          const list = await api.get<Character[]>(`/api/v1/books/${bookId}/characters`)
           const c = (list ?? []).find((x) => String(x.id) === assetId)
           if (alive && c)
             setForm({
@@ -91,8 +91,8 @@ export default function AssetEditor() {
     try {
       if (isScene) {
         const body = { name: form.name.trim(), description: form.description, imageUrl: form.imageUrl }
-        if (isEdit) await api.put(`/api/books/${bookId}/scenes/${assetId}`, body)
-        else await api.post(`/api/books/${bookId}/scenes`, body)
+        if (isEdit) await api.put(`/api/v1/books/${bookId}/scenes/${assetId}`, body)
+        else await api.post(`/api/v1/books/${bookId}/scenes`, body)
       } else {
         const body = {
           type: kind as CharacterType,
@@ -103,8 +103,8 @@ export default function AssetEditor() {
           description: form.description,
           imageUrl: form.imageUrl,
         }
-        if (isEdit) await api.put(`/api/books/${bookId}/characters/${assetId}`, body)
-        else await api.post(`/api/books/${bookId}/characters`, body)
+        if (isEdit) await api.put(`/api/v1/books/${bookId}/characters/${assetId}`, body)
+        else await api.post(`/api/v1/books/${bookId}/characters`, body)
       }
       navigate(backTo)
     } catch (err) {
