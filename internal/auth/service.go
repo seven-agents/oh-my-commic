@@ -72,7 +72,11 @@ func (s *Service) Register(in RegisterInput) (token string, u models.User, err e
 	if err != nil {
 		return "", models.User{}, fmt.Errorf("register: read invite code: %w", err)
 	}
-	if in.InviteCode != current {
+	// Defense in depth: an unconfigured invite code ("" from Get) must never
+	// open registration. Reject before the equality check so a request carrying
+	// InviteCode:"" cannot pass via "" == "" — no invite code means signup is
+	// closed, so any input is refused.
+	if current == "" || in.InviteCode != current {
 		return "", models.User{}, ErrBadInvite
 	}
 

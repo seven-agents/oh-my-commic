@@ -105,6 +105,44 @@ func TestRegisterWrongInviteCode(t *testing.T) {
 	}
 }
 
+// TestRegisterRejectedWhenInviteUnconfigured verifies that when no invite code
+// has ever been seeded (Get returns ""), registration is closed: any InviteCode
+// — empty or arbitrary — is refused with ErrBadInvite, and no user is created.
+// This is the defense-in-depth guard against an empty-string bypass.
+func TestRegisterRejectedWhenInviteUnconfigured(t *testing.T) {
+	d, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { d.Close() })
+
+	// Deliberately do NOT seed an invite code.
+	repo := NewUserRepo(d)
+	svc := NewService(repo, NewInviteRepo(d), NewSession(nil), 10)
+
+	cases := []struct {
+		name       string
+		username   string
+		inviteCode string
+	}{
+		{"empty invite code", "emptycode", ""},
+		{"arbitrary invite code", "anycode", "whatever"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			in := validRegister(tc.inviteCode, tc.username)
+			in.InviteCode = tc.inviteCode
+			_, _, err := svc.Register(in)
+			if !errors.Is(err, ErrBadInvite) {
+				t.Fatalf("register with unconfigured invite should return ErrBadInvite, got %v", err)
+			}
+			if _, err := repo.ByUsername(tc.username); err == nil {
+				t.Fatalf("no user should be created when signup is closed (username %q exists)", tc.username)
+			}
+		})
+	}
+}
+
 func TestRegisterWeakPassword(t *testing.T) {
 	svc, code := newTestService(t, 10)
 	in := validRegister(code, "weakpw")
