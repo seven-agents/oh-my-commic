@@ -47,23 +47,42 @@ type Scene struct {
 	ImageURL    string `json:"imageUrl"`
 }
 
+// ConversationMsg is one turn of the persisted storyboard-chat conversation: a
+// role ("user" / "assistant") and its text content. The full ordered slice is
+// stored on the chapter (as a JSON TEXT column) so re-entering the chapter
+// editor can restore the chat history and the user can keep refining.
+type ConversationMsg struct {
+	Role    string `json:"role"`
+	Content string `json:"content"`
+}
+
 // Chapter is an ordered section of a Book.
 //
 // Summary is an AI-polished, warm Chinese overview (2-4 sentences) of the
 // chapter's story, produced as a side-output of the storyboard-chat turn and
 // shown on the book reader's per-chapter page.
+//
+// Conversation is the persisted stage-1 storyboard-chat history and PanelCount
+// is the target number of frames chosen for the chapter; together they let the
+// chat editor restore state across sessions.
 type Chapter struct {
-	ID        int64  `json:"id"`
-	BookID    int64  `json:"bookId"`
-	Order     int    `json:"order"`
-	Title     string `json:"title"`
-	Status    string `json:"status"`
-	Summary   string `json:"summary"`
-	IsCover   bool   `json:"isCover"`
-	CreatedAt string `json:"createdAt"`
+	ID           int64             `json:"id"`
+	BookID       int64             `json:"bookId"`
+	Order        int               `json:"order"`
+	Title        string            `json:"title"`
+	Status       string            `json:"status"`
+	Summary      string            `json:"summary"`
+	IsCover      bool              `json:"isCover"`
+	CreatedAt    string            `json:"createdAt"`
+	Conversation []ConversationMsg `json:"conversation"`
+	PanelCount   int               `json:"panelCount"`
 }
 
 // Panel is a single comic frame within a Chapter.
+//
+// Content is the stage-1 basic Chinese description of the frame ("what happens
+// here") produced by the storyboard chat; it is the source the stage-2
+// ProcessPanel step decomposes into the structured fields below.
 //
 // Location, Event and CharExpressions carry the structured storyboard fields: a
 // panel's setting, the action, and each present character's facial expression
@@ -74,6 +93,7 @@ type Panel struct {
 	ID              int64            `json:"id"`
 	ChapterID       int64            `json:"chapterId"`
 	Order           int              `json:"order"`
+	Content         string           `json:"content"`
 	Caption         string           `json:"caption"`
 	CharacterIDs    []int64          `json:"characterIds"`
 	SceneID         int64            `json:"sceneId"`

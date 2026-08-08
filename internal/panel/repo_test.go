@@ -86,6 +86,7 @@ func TestReplacePanelsReorders(t *testing.T) {
 	in := []models.Panel{
 		{
 			Caption:         "A",
+			Content:         "小狐狸出发探险",
 			CharacterIDs:    []int64{2, 3},
 			Location:        "森林",
 			Event:           "出发",
@@ -117,6 +118,9 @@ func TestReplacePanelsReorders(t *testing.T) {
 	// Structured fields must round-trip through the new columns.
 	if got[0].Location != "森林" || got[0].Event != "出发" {
 		t.Fatalf("location/event 往返错: %+v", got[0])
+	}
+	if got[0].Content != "小狐狸出发探险" {
+		t.Fatalf("content 往返错: %+v", got[0])
 	}
 	if got[0].CharExpressions[2] != "开心" || got[0].CharExpressions[3] != "好奇" {
 		t.Fatalf("CharExpressions JSON 往返错: %+v", got[0].CharExpressions)
@@ -176,6 +180,7 @@ func TestUpdatePanel(t *testing.T) {
 
 	updated, err := env.panels.UpdatePanel(1, id, models.Panel{
 		Caption:         "edited",
+		Content:         "改后的内容",
 		CharacterIDs:    []int64{7},
 		SceneID:         5,
 		ImagePrompt:     "a prompt",
@@ -188,6 +193,9 @@ func TestUpdatePanel(t *testing.T) {
 	}
 	if updated.Caption != "edited" || updated.SceneID != 5 || updated.ImagePrompt != "a prompt" {
 		t.Fatalf("editable fields not persisted: %+v", updated)
+	}
+	if updated.Content != "改后的内容" {
+		t.Fatalf("content 未更新: %+v", updated)
 	}
 	if updated.Location != "山顶" || updated.Event != "看日出" {
 		t.Fatalf("location/event 未更新: %+v", updated)

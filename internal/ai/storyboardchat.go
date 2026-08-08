@@ -62,38 +62,68 @@ type PanelDraftV2 struct {
 	ImagePrompt string         `json:"imagePrompt"`
 }
 
-// StoryboardResult is one conversational turn's output: a warm one-line reply to
-// the user, a polished Chinese story overview (Summary) for the book reader, plus
-// the full structured storyboard for the chapter. Summary is optional — a model
-// that omits it decodes to the empty string and must not fail the parse.
+// PanelContent is one stage-1 storyboard frame: only the basic Chinese
+// description of what happens in the frame. The structured decomposition
+// (location, characters, event, imagePrompt, …) is produced later by the
+// stage-2 ProcessPanel step, not here.
+type PanelContent struct {
+	Content string `json:"content"`
+}
+
+// StoryboardResult is one stage-1 conversational turn's output: a warm one-line
+// reply to the user, a polished Chinese story overview (Summary) for the book
+// reader, plus the content-only frame list for the chapter. Summary and Panels
+// are optional — a model that omits them decodes to the zero value and must not
+// fail the parse.
 type StoryboardResult struct {
 	Reply   string         `json:"reply"`
 	Summary string         `json:"summary"`
-	Panels  []PanelDraftV2 `json:"panels"`
+	Panels  []PanelContent `json:"panels"`
 }
 
-// StoryboardChat runs one turn of the unified conversational storyboard flow. It
-// prepends the structured system prompt to the accumulated history, calls the
-// chat model, robustly extracts the JSON object embedded in the reply (tolerating
-// surrounding prose and code fences), and sanitizes every panel against the
-// book's real assets before returning. panelCount is a soft target threaded into
-// the system prompt (0 = let the prompt use its default range); the user may
-// still override it in conversation.
-func StoryboardChat(ctx context.Context, c *Client, history []Msg, assets AssetContext, panelCount int) (StoryboardResult, error) {
-	messages := append([]Msg{{Role: "system", Content: storyboardChatPrompt(assets, panelCount)}}, history...)
+// StoryboardChat runs one turn of the stage-1 conversational storyboard flow. It
+// prepends the system prompt to the accumulated history, calls the chat model,
+// and robustly extracts the JSON object embedded in the reply (tolerating
+// surrounding prose and code fences). The model only splits the story into N
+// content-only frames; the structured decomposition happens later in
+// ProcessPanel. panelCount is a soft target threaded into the system prompt
+// (0 = let the prompt use its default range). currentContents carries the
+// chapter's existing per-frame contents so the model refines them in place
+// rather than rewriting from scratch; it may be empty.
+func StoryboardChat(ctx context.Context, c *Client, history []Msg, assets AssetContext, panelCount int, currentContents []string) (StoryboardResult, error) {
+	messages := append([]Msg{{Role: "system", Content: storyboardChatPrompt(assets, panelCount, currentContents)}}, history...)
 
 	content, err := c.Chat(ctx, messages)
 	if err != nil {
 		return StoryboardResult{}, err
 	}
 
-	res, err := parseStoryboardResult(content)
-	if err != nil {
-		return StoryboardResult{}, err
+	return parseStoryboardResult(content)
+}
+
+// ProcessPanel runs the stage-2 per-frame decomposition: given ONE frame's
+// Chinese content plus the book's asset list, it asks the model for that frame's
+// structured storyboard object {location, sceneId, characters:[{id,expression}],
+// event, caption, imagePrompt} and sanitizes it against the real assets (dropping
+// hallucinated ids and enforcing the ≤10-reference cap). It robustly extracts the
+// JSON object from the reply.
+func ProcessPanel(ctx context.Context, c *Client, content string, assets AssetContext) (PanelDraftV2, error) {
+	messages := []Msg{
+		{Role: "system", Content: processPanelPrompt(assets)},
+		{Role: "user", Content: content},
 	}
 
-	res.Panels = sanitizePanels(res.Panels, assets)
-	return res, nil
+	reply, err := c.Chat(ctx, messages)
+	if err != nil {
+		return PanelDraftV2{}, err
+	}
+
+	draft, err := parsePanelDraft(reply)
+	if err != nil {
+		return PanelDraftV2{}, err
+	}
+
+	return sanitizePanels([]PanelDraftV2{draft}, assets)[0], nil
 }
 
 // parseStoryboardResult extracts the JSON object embedded in content (from the
@@ -113,6 +143,25 @@ func parseStoryboardResult(content string) (StoryboardResult, error) {
 		return StoryboardResult{}, fmt.Errorf("ai: parse storyboard JSON: %w", err)
 	}
 	return res, nil
+}
+
+// parsePanelDraft extracts the JSON object embedded in content (from the first
+// '{' to the last '}') and unmarshals it into a single PanelDraftV2. It returns
+// an error when no JSON object is present or the fragment is malformed.
+func parsePanelDraft(content string) (PanelDraftV2, error) {
+	start := strings.IndexByte(content, '{')
+	end := strings.LastIndexByte(content, '}')
+	if start < 0 || end < 0 || end < start {
+		return PanelDraftV2{}, fmt.Errorf("ai: no JSON object found in panel response")
+	}
+
+	fragment := content[start : end+1]
+
+	var draft PanelDraftV2
+	if err := json.Unmarshal([]byte(fragment), &draft); err != nil {
+		return PanelDraftV2{}, fmt.Errorf("ai: parse panel JSON: %w", err)
+	}
+	return draft, nil
 }
 
 // sanitizePanels validates and trims each panel against the book's real assets:

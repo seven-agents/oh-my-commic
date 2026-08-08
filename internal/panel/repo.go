@@ -32,7 +32,7 @@ const statusDone = "done"
 // panelColumns is the ordered column list used by every panel SELECT so the scan
 // order stays in sync with scanPanel. "order" is a SQL reserved word and is
 // always quoted.
-const panelColumns = `id, chapter_id, "order", caption, character_ids, scene_id, image_prompt, image_url, status, location, event, char_expressions`
+const panelColumns = `id, chapter_id, "order", caption, character_ids, scene_id, image_prompt, image_url, status, location, event, char_expressions, content`
 
 // Repo performs pure data operations on the panels table. It is keyed by
 // chapter_id / id and does NOT enforce ownership; that is the Service's
@@ -50,9 +50,12 @@ func NewRepo(d *sql.DB) *Repo {
 // given panels. Within a single transaction it deletes the chapter's existing
 // panels then inserts the new ones in slice order, assigning "order" values
 // 0, 1, 2, … (0-based). CharacterIDs is serialized to a JSON array TEXT (nil
-// becomes "[]"). The freshly inserted panels — with generated ids and assigned
-// orders — are returned. On any error the transaction is rolled back so the
-// chapter's panels are left unchanged.
+// becomes "[]"). Each panel's provided Status, ImageURL, Content and structured
+// fields are persisted as given (an empty Status defaults to "pending"), so a
+// merged storyboard can carry forward already-rendered images and parsed fields
+// for frames whose content did not change. The freshly inserted panels — with
+// generated ids and assigned orders — are returned. On any error the transaction
+// is rolled back so the chapter's panels are left unchanged.
 func (r *Repo) ReplaceForChapter(chapterID int64, panels []models.Panel) ([]models.Panel, error) {
 	tx, err := r.db.Begin()
 	if err != nil {
@@ -76,10 +79,16 @@ func (r *Repo) ReplaceForChapter(chapterID int64, panels []models.Panel) ([]mode
 			return nil, fmt.Errorf("replace panels for chapter %d: marshal expressions: %w", chapterID, err)
 		}
 		order := int64(i)
+		// Preserve the provided status so a merged panel keeps its prior
+		// (possibly "done") state; only default the empty case to pending.
+		status := p.Status
+		if status == "" {
+			status = statusPending
+		}
 		res, err := tx.Exec(
-			`INSERT INTO panels (chapter_id, "order", caption, character_ids, scene_id, image_prompt, image_url, status, location, event, char_expressions)
-			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			chapterID, order, p.Caption, ids, p.SceneID, p.ImagePrompt, p.ImageURL, statusPending, p.Location, p.Event, exprs,
+			`INSERT INTO panels (chapter_id, "order", caption, character_ids, scene_id, image_prompt, image_url, status, location, event, char_expressions, content)
+			 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			chapterID, order, p.Caption, ids, p.SceneID, p.ImagePrompt, p.ImageURL, status, p.Location, p.Event, exprs, p.Content,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("replace panels for chapter %d: insert: %w", chapterID, err)
@@ -95,7 +104,7 @@ func (r *Repo) ReplaceForChapter(chapterID int64, panels []models.Panel) ([]mode
 		inserted.Order = int(order)
 		inserted.CharacterIDs = normalizeIDs(p.CharacterIDs)
 		inserted.CharExpressions = normalizeExpressions(p.CharExpressions)
-		inserted.Status = statusPending
+		inserted.Status = status
 		out = append(out, inserted)
 	}
 
@@ -148,7 +157,7 @@ func (r *Repo) Get(id int64) (models.Panel, error) {
 	return p, nil
 }
 
-// Update overwrites the editable fields of the panel with id — caption,
+// Update overwrites the editable fields of the panel with id — content, caption,
 // character_ids (JSON), scene_id, image_prompt, location, event and
 // char_expressions (JSON) — and returns the refreshed row. It returns
 // ErrNotFound if no such panel exists.
@@ -162,8 +171,8 @@ func (r *Repo) Update(id int64, p models.Panel) (models.Panel, error) {
 		return models.Panel{}, fmt.Errorf("update panel %d: marshal expressions: %w", id, err)
 	}
 	res, err := r.db.Exec(
-		`UPDATE panels SET caption = ?, character_ids = ?, scene_id = ?, image_prompt = ?, location = ?, event = ?, char_expressions = ? WHERE id = ?`,
-		p.Caption, ids, p.SceneID, p.ImagePrompt, p.Location, p.Event, exprs, id,
+		`UPDATE panels SET content = ?, caption = ?, character_ids = ?, scene_id = ?, image_prompt = ?, location = ?, event = ?, char_expressions = ? WHERE id = ?`,
+		p.Content, p.Caption, ids, p.SceneID, p.ImagePrompt, p.Location, p.Event, exprs, id,
 	)
 	if err != nil {
 		return models.Panel{}, fmt.Errorf("update panel %d: %w", id, err)
@@ -234,7 +243,7 @@ func scanPanel(s scanner) (models.Panel, error) {
 	)
 	if err := s.Scan(
 		&p.ID, &p.ChapterID, &p.Order, &p.Caption, &ids, &p.SceneID, &p.ImagePrompt, &p.ImageURL, &p.Status,
-		&p.Location, &p.Event, &exprs,
+		&p.Location, &p.Event, &exprs, &p.Content,
 	); err != nil {
 		return models.Panel{}, err
 	}

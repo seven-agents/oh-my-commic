@@ -162,3 +162,17 @@ func (s *Service) SetSummary(userID, chapterID int64, summary string) (models.Ch
 	}
 	return s.repo.SetSummary(chapterID, summary)
 }
+
+// SaveConversation persists the stage-1 storyboard-chat history and the target
+// panel_count of the chapter with chapterID after re-checking that its owning
+// book belongs to userID. Cross-user or unknown chapters return ErrNotFound.
+func (s *Service) SaveConversation(userID, chapterID int64, conv []models.ConversationMsg, panelCount int) (models.Chapter, error) {
+	c, err := s.repo.Get(chapterID)
+	if err != nil {
+		return models.Chapter{}, err
+	}
+	if err := s.ownBook(userID, c.BookID); err != nil {
+		return models.Chapter{}, err
+	}
+	return s.repo.SetConversation(chapterID, conv, panelCount)
+}
