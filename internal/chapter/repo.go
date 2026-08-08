@@ -29,7 +29,7 @@ const statusDraft = "draft"
 // chapterColumns is the ordered column list used by every chapter SELECT so the
 // scan order stays in sync with scanChapter. "order" is a SQL reserved word and
 // is always quoted.
-const chapterColumns = `id, book_id, "order", title, status, created_at`
+const chapterColumns = `id, book_id, "order", title, status, summary, created_at`
 
 // Repo performs pure data operations on the chapters table. It is keyed by
 // book_id / id and does NOT enforce ownership; that is the Service's
@@ -129,6 +129,27 @@ func (r *Repo) SetStatus(id int64, status string) (models.Chapter, error) {
 	return r.Get(id)
 }
 
+// SetSummary overwrites the summary of the chapter with id and returns the
+// refreshed row. It returns ErrNotFound if no such chapter exists. Ownership is
+// the Service's responsibility.
+func (r *Repo) SetSummary(id int64, summary string) (models.Chapter, error) {
+	res, err := r.db.Exec(
+		`UPDATE chapters SET summary = ? WHERE id = ?`,
+		summary, id,
+	)
+	if err != nil {
+		return models.Chapter{}, fmt.Errorf("set summary for chapter %d: %w", id, err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return models.Chapter{}, fmt.Errorf("set summary for chapter %d: rows affected: %w", id, err)
+	}
+	if affected == 0 {
+		return models.Chapter{}, ErrNotFound
+	}
+	return r.Get(id)
+}
+
 // scanner is satisfied by both *sql.Row and *sql.Rows, letting scanChapter serve
 // single-row and multi-row queries.
 type scanner interface {
@@ -139,7 +160,7 @@ type scanner interface {
 func scanChapter(s scanner) (models.Chapter, error) {
 	var c models.Chapter
 	if err := s.Scan(
-		&c.ID, &c.BookID, &c.Order, &c.Title, &c.Status, &c.CreatedAt,
+		&c.ID, &c.BookID, &c.Order, &c.Title, &c.Status, &c.Summary, &c.CreatedAt,
 	); err != nil {
 		return models.Chapter{}, err
 	}

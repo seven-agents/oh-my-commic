@@ -63,10 +63,13 @@ type PanelDraftV2 struct {
 }
 
 // StoryboardResult is one conversational turn's output: a warm one-line reply to
-// the user plus the full structured storyboard for the chapter.
+// the user, a polished Chinese story overview (Summary) for the book reader, plus
+// the full structured storyboard for the chapter. Summary is optional — a model
+// that omits it decodes to the empty string and must not fail the parse.
 type StoryboardResult struct {
-	Reply  string         `json:"reply"`
-	Panels []PanelDraftV2 `json:"panels"`
+	Reply   string         `json:"reply"`
+	Summary string         `json:"summary"`
+	Panels  []PanelDraftV2 `json:"panels"`
 }
 
 // StoryboardChat runs one turn of the unified conversational storyboard flow. It

@@ -116,3 +116,17 @@ func (s *Service) SetStatus(userID, chapterID int64, status string) (models.Chap
 	}
 	return s.repo.SetStatus(chapterID, status)
 }
+
+// SetSummary overwrites the AI-polished story summary of the chapter with
+// chapterID after re-checking that its owning book belongs to userID. Cross-user
+// or unknown chapters return ErrNotFound.
+func (s *Service) SetSummary(userID, chapterID int64, summary string) (models.Chapter, error) {
+	c, err := s.repo.Get(chapterID)
+	if err != nil {
+		return models.Chapter{}, err
+	}
+	if err := s.ownBook(userID, c.BookID); err != nil {
+		return models.Chapter{}, err
+	}
+	return s.repo.SetSummary(chapterID, summary)
+}

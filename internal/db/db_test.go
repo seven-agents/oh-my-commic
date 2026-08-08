@@ -39,6 +39,63 @@ func TestPanelsStructuredColumns(t *testing.T) {
 	}
 }
 
+// TestChaptersSummaryColumn verifies the summary column exists on the chapters
+// table for a fresh DB (created inline by the CREATE TABLE statement).
+func TestChaptersSummaryColumn(t *testing.T) {
+	d, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	cols := columnSet(t, d, "chapters")
+	if !cols["summary"] {
+		t.Fatalf("chapters 表缺少列 %q，实际列: %v", "summary", cols)
+	}
+}
+
+// TestMigrateAddsSummaryToLegacyChapters proves the idempotent ALTER path for
+// chapters.summary: a legacy chapters table without the column gains it after
+// Migrate, and a second Migrate run does not fail on the duplicate column.
+func TestMigrateAddsSummaryToLegacyChapters(t *testing.T) {
+	d, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	// panels FK-references chapters, so drop it first to allow dropping chapters.
+	if _, err := d.Exec(`DROP TABLE panels`); err != nil {
+		t.Fatalf("drop panels: %v", err)
+	}
+	if _, err := d.Exec(`DROP TABLE chapters`); err != nil {
+		t.Fatalf("drop chapters: %v", err)
+	}
+	// Recreate chapters WITHOUT the summary column to simulate a legacy DB.
+	if _, err := d.Exec(`CREATE TABLE chapters (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  book_id INTEGER NOT NULL,
+  "order" INTEGER NOT NULL DEFAULT 0,
+  title TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'draft',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`); err != nil {
+		t.Fatalf("create legacy chapters: %v", err)
+	}
+
+	if err := Migrate(d); err != nil {
+		t.Fatalf("migrate legacy DB: %v", err)
+	}
+	if cols := columnSet(t, d, "chapters"); !cols["summary"] {
+		t.Fatalf("迁移后 chapters 表仍缺列 %q，实际列: %v", "summary", cols)
+	}
+
+	// A repeat Migrate must tolerate the now-duplicate column.
+	if err := Migrate(d); err != nil {
+		t.Fatalf("重复迁移应幂等，got: %v", err)
+	}
+}
+
 // TestMigrateAddsColumnsToLegacyDB proves the idempotent ALTER path: a legacy
 // panels table without the structured columns gains them after Migrate, and a
 // second Migrate run does not fail on the duplicate columns.
@@ -86,7 +143,13 @@ func TestMigrateAddsColumnsToLegacyDB(t *testing.T) {
 // panelColumnSet returns the set of column names on the panels table.
 func panelColumnSet(t *testing.T, d *sql.DB) map[string]bool {
 	t.Helper()
-	rows, err := d.Query(`PRAGMA table_info(panels)`)
+	return columnSet(t, d, "panels")
+}
+
+// columnSet returns the set of column names on the given table.
+func columnSet(t *testing.T, d *sql.DB, table string) map[string]bool {
+	t.Helper()
+	rows, err := d.Query(`PRAGMA table_info(` + table + `)`)
 	if err != nil {
 		t.Fatalf("pragma table_info: %v", err)
 	}

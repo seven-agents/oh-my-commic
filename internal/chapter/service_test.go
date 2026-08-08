@@ -201,4 +201,61 @@ func TestGetSetStatusUnknownChapter(t *testing.T) {
 	if _, err := svc.SetStatus(1, 999, "storyboarding"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("未知章节 SetStatus 应返回 ErrNotFound, got %v", err)
 	}
+	if _, err := svc.SetSummary(1, 999, "概述"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("未知章节 SetSummary 应返回 ErrNotFound, got %v", err)
+	}
+}
+
+// TestSetSummaryOwnershipAndRoundTrip verifies the owner can set a chapter's
+// summary, that a cross-user attempt returns ErrNotFound without mutating the
+// stored summary, and that the value round-trips through Get and ListChapters.
+func TestSetSummaryOwnershipAndRoundTrip(t *testing.T) {
+	svc, books := newTestService(t)
+	b, err := books.Create(1, "书", "ghibli", "")
+	if err != nil {
+		t.Fatalf("create book: %v", err)
+	}
+	c, err := svc.CreateChapter(1, b.ID, "章")
+	if err != nil {
+		t.Fatalf("create chapter: %v", err)
+	}
+	if c.Summary != "" {
+		t.Fatalf("新章节 summary 应为空, got %q", c.Summary)
+	}
+
+	// Cross-user write must be rejected and must not mutate the summary.
+	if _, err := svc.SetSummary(2, c.ID, "越权概述"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("跨用户 SetSummary 应返回 ErrNotFound, got %v", err)
+	}
+	if got, _ := svc.GetChapter(1, c.ID); got.Summary != "" {
+		t.Fatalf("跨用户尝试后 summary 不应被改动, got %q", got.Summary)
+	}
+
+	// Owner sets the summary.
+	const summary = "小狐狸在黄昏的森林里找到了回家的路，温暖又勇敢。"
+	updated, err := svc.SetSummary(1, c.ID, summary)
+	if err != nil {
+		t.Fatalf("owner SetSummary: %v", err)
+	}
+	if updated.Summary != summary {
+		t.Fatalf("SetSummary 返回值 summary 错: %q", updated.Summary)
+	}
+
+	// Round-trips through Get.
+	got, err := svc.GetChapter(1, c.ID)
+	if err != nil {
+		t.Fatalf("get chapter: %v", err)
+	}
+	if got.Summary != summary {
+		t.Fatalf("Get 的 summary 应往返, got %q", got.Summary)
+	}
+
+	// Round-trips through ListChapters.
+	list, err := svc.ListChapters(1, b.ID)
+	if err != nil {
+		t.Fatalf("list chapters: %v", err)
+	}
+	if len(list) != 1 || list[0].Summary != summary {
+		t.Fatalf("ListChapters 的 summary 应往返, got %+v", list)
+	}
 }

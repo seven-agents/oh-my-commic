@@ -192,6 +192,54 @@ func TestStoryboardChatPersistsPanels(t *testing.T) {
 	}
 }
 
+// TestStoryboardChatPersistsSummary verifies the AI-produced summary is stored
+// on the chapter (readable via GetChapter) as a side-output of the turn.
+func TestStoryboardChatPersistsSummary(t *testing.T) {
+	const summary = "小狐狸出发探险，最后温暖地回到家。"
+	env := newStoryTestEnv(t, `{"reply":"好的","summary":"`+summary+`","panels":[`+
+		`{"location":"家里","sceneId":0,"characters":[],"event":"回到家","caption":"回家","imagePrompt":"home"}]}`)
+	ch := env.newChapter(t, 1)
+
+	if _, _, err := env.svc.StoryboardChat(1, ch.ID, nil, 0); err != nil {
+		t.Fatalf("chat: %v", err)
+	}
+
+	got, err := env.chapters.GetChapter(1, ch.ID)
+	if err != nil {
+		t.Fatalf("get chapter: %v", err)
+	}
+	if got.Summary != summary {
+		t.Fatalf("章节 summary 应被持久化, got %q", got.Summary)
+	}
+}
+
+// TestStoryboardChatEmptySummaryDoesNotWipe verifies a later turn that omits the
+// summary does NOT overwrite a summary stored by an earlier turn.
+func TestStoryboardChatEmptySummaryDoesNotWipe(t *testing.T) {
+	const summary = "第一轮产出的温暖概述。"
+	const panels = `"panels":[{"location":"L","sceneId":0,"characters":[],"event":"E","caption":"C","imagePrompt":"P"}]`
+	env := newStoryTestEnv(t, `{"reply":"好的","summary":"`+summary+`",`+panels+`}`)
+	ch := env.newChapter(t, 1)
+
+	if _, _, err := env.svc.StoryboardChat(1, ch.ID, nil, 0); err != nil {
+		t.Fatalf("first turn: %v", err)
+	}
+
+	// Second turn omits summary entirely — the stored summary must survive.
+	env.setContent(`{"reply":"再来",` + panels + `}`)
+	if _, _, err := env.svc.StoryboardChat(1, ch.ID, nil, 0); err != nil {
+		t.Fatalf("second turn: %v", err)
+	}
+
+	got, err := env.chapters.GetChapter(1, ch.ID)
+	if err != nil {
+		t.Fatalf("get chapter: %v", err)
+	}
+	if got.Summary != summary {
+		t.Fatalf("空 summary 不应覆盖已存概述, got %q", got.Summary)
+	}
+}
+
 func TestStoryboardChatBadJSONErrors(t *testing.T) {
 	env := newStoryTestEnv(t, "抱歉无法生成")
 	ch := env.newChapter(t, 1)

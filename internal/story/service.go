@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/seven-agents/oh-my-commic/internal/ai"
 	"github.com/seven-agents/oh-my-commic/internal/asset"
@@ -71,6 +72,17 @@ func (s *Service) StoryboardChat(userID, chapterID int64, history []ai.Msg, pane
 	if ch.Status != storyboardingStatus {
 		if _, err := s.chapters.SetStatus(userID, chapterID, storyboardingStatus); err != nil {
 			return "", nil, mapOwnershipErr(err)
+		}
+	}
+
+	// Persist the AI-polished story overview for the book reader. Only overwrite
+	// when the model produced one, so a turn that omits it never wipes an existing
+	// summary. This is a best-effort side-output: the chapter is already known to
+	// be owned, so a hiccup here must not discard the successfully stored panels
+	// and reply — log and continue.
+	if res.Summary != "" {
+		if _, err := s.chapters.SetSummary(userID, chapterID, res.Summary); err != nil {
+			log.Printf("story: persist summary for chapter %d failed: %v", chapterID, err)
 		}
 	}
 

@@ -90,7 +90,7 @@ func TestStoryboardChatParsesAndSanitizes(t *testing.T) {
 	// dropped). scene 5 is valid, but with 2 valid characters + scene = 3 refs it
 	// stays. Total valid refs must be ≤3.
 	body := "好的，这是分镜：\n" +
-		`{"reply":"我们来讲棉花糖的故事吧！","panels":[` +
+		`{"reply":"我们来讲棉花糖的故事吧！","summary":"棉花糖在黄昏的森林里听见门声，好奇地回头张望，温暖的故事就此开始。","panels":[` +
 		`{"location":"黄昏的森林餐桌旁","sceneId":5,` +
 		`"characters":[{"id":1,"expression":"歪着头、好奇"},{"id":2,"expression":"微笑"},{"id":3,"expression":"生气"},{"id":4,"expression":"哭"}],` +
 		`"event":"棉花糖听到门开的声音回头张望","caption":"棉花糖好奇地回头。","imagePrompt":"fox at dusk"}` +
@@ -106,6 +106,9 @@ func TestStoryboardChatParsesAndSanitizes(t *testing.T) {
 	}
 	if res.Reply != "我们来讲棉花糖的故事吧！" {
 		t.Fatalf("reply 解析错: %q", res.Reply)
+	}
+	if res.Summary != "棉花糖在黄昏的森林里听见门声，好奇地回头张望，温暖的故事就此开始。" {
+		t.Fatalf("summary 解析错: %q", res.Summary)
 	}
 	if len(res.Panels) != 1 {
 		t.Fatalf("应有 1 格分镜, got %d", len(res.Panels))
@@ -215,6 +218,43 @@ func TestStoryboardChatFencedJSON(t *testing.T) {
 	}
 	if res.Panels[0].Location != "L" || res.Panels[0].SceneID != 0 {
 		t.Fatalf("字段解析错: %+v", res.Panels[0])
+	}
+}
+
+// TestStoryboardChatSummaryOptional verifies a response that OMITS "summary"
+// still parses (summary degrades to the empty string) and does not fail.
+func TestStoryboardChatSummaryOptional(t *testing.T) {
+	body := `{"reply":"你好","panels":[{"location":"L","sceneId":0,"characters":[],"event":"E","caption":"C","imagePrompt":"P"}]}`
+	ts := fakeChatServer(body)
+	defer ts.Close()
+
+	c := &Client{Key: "sk-x", TextBaseURL: ts.URL, TextModel: "qwen-plus", HTTP: ts.Client()}
+	res, err := StoryboardChat(context.Background(), c, nil, AssetContext{}, 0)
+	if err != nil {
+		t.Fatalf("缺失 summary 不应报错: %v", err)
+	}
+	if res.Summary != "" {
+		t.Fatalf("缺失 summary 应为空串, got %q", res.Summary)
+	}
+	if res.Reply != "你好" || len(res.Panels) != 1 {
+		t.Fatalf("其余字段应正常解析: %+v", res)
+	}
+}
+
+// TestStoryboardChatParsesSummary verifies a present "summary" is parsed.
+func TestStoryboardChatParsesSummary(t *testing.T) {
+	const summary = "一段温暖的中文故事概述。"
+	body := `{"reply":"你好","summary":"` + summary + `","panels":[]}`
+	ts := fakeChatServer(body)
+	defer ts.Close()
+
+	c := &Client{Key: "sk-x", TextBaseURL: ts.URL, TextModel: "qwen-plus", HTTP: ts.Client()}
+	res, err := StoryboardChat(context.Background(), c, nil, AssetContext{}, 0)
+	if err != nil {
+		t.Fatalf("storyboard chat: %v", err)
+	}
+	if res.Summary != summary {
+		t.Fatalf("summary 应被解析, got %q", res.Summary)
 	}
 }
 
