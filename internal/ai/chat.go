@@ -56,7 +56,9 @@ func (c *Client) Chat(ctx context.Context, messages []Msg) (string, error) {
 
 	resp, err := c.httpClient().Do(req)
 	if err != nil {
-		return "", fmt.Errorf("ai: chat request failed: %w", err)
+		// Classify a timeout so handlers can map it to a 504; otherwise the
+		// original transport error is preserved through the %w chain.
+		return "", fmt.Errorf("ai: chat request failed: %w", classifyTransport(err))
 	}
 	defer resp.Body.Close()
 
@@ -66,7 +68,14 @@ func (c *Client) Chat(ctx context.Context, messages []Msg) (string, error) {
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("ai: chat returned status %d: %s", resp.StatusCode, string(body))
+		// Never surface the upstream body: the request carried the Bearer key and
+		// a misbehaving upstream could echo it back, so only the status code is
+		// reported. A 429/5xx additionally carries a sentinel (via %w) so handlers
+		// can distinguish rate-limit / upstream-down.
+		if sentinel := classifyStatus(resp.StatusCode); sentinel != nil {
+			return "", fmt.Errorf("ai: chat returned status %d: %w", resp.StatusCode, sentinel)
+		}
+		return "", fmt.Errorf("ai: chat returned status %d", resp.StatusCode)
 	}
 
 	var parsed chatResponse

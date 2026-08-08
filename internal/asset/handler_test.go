@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/seven-agents/oh-my-commic/internal/ai"
 	"github.com/seven-agents/oh-my-commic/internal/auth"
 	"github.com/seven-agents/oh-my-commic/internal/book"
 	"github.com/seven-agents/oh-my-commic/internal/comicify"
@@ -627,5 +629,31 @@ func TestUploadInvalidBookID400(t *testing.T) {
 	rec := env.serveAs(t, req, 1)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("非法 bookId 应为 400, got %d", rec.Code)
+	}
+}
+
+// TestWriteComicifyErrorClassifies verifies the comicify error mapping: the
+// insufficient-credits and AI-error sentinels map to distinct HTTP statuses via
+// the wrapped chain, with the generic fallback staying 502.
+func TestWriteComicifyErrorClassifies(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"insufficient credits", comicify.ErrInsufficientCredits, http.StatusPaymentRequired},
+		{"rate limited", fmt.Errorf("comicify: edit: %w", ai.ErrRateLimited), http.StatusTooManyRequests},
+		{"timeout", fmt.Errorf("comicify: edit: %w", ai.ErrUpstreamTimeout), http.StatusGatewayTimeout},
+		{"unavailable", fmt.Errorf("comicify: edit: %w", ai.ErrUpstreamUnavailable), http.StatusBadGateway},
+		{"generic fallback", fmt.Errorf("comicify: boom"), http.StatusBadGateway},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			writeComicifyError(w, tc.err)
+			if w.Code != tc.want {
+				t.Fatalf("status = %d, want %d, body=%s", w.Code, tc.want, w.Body.String())
+			}
+		})
 	}
 }

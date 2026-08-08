@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -97,6 +98,63 @@ func TestSeedreamImageNon2xxError(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), "ark-secret") {
 		t.Fatalf("error leaked key: %v", err)
+	}
+}
+
+// TestSeedreamImageClassifiesStatus verifies a 429 wraps ErrRateLimited and a
+// 5xx wraps ErrUpstreamUnavailable, while other non-2xx carry no sentinel — and
+// none of them leak the key.
+func TestSeedreamImageClassifiesStatus(t *testing.T) {
+	cases := []struct {
+		code int
+		want error
+	}{
+		{http.StatusTooManyRequests, ErrRateLimited},
+		{http.StatusInternalServerError, ErrUpstreamUnavailable},
+		{http.StatusBadGateway, ErrUpstreamUnavailable},
+		{http.StatusBadRequest, nil},
+	}
+	for _, tc := range cases {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			http.Error(w, "boom ark-secret", tc.code)
+		}))
+		c := &Client{ArkKey: "ark-secret", SeedreamBaseURL: srv.URL, SeedreamModel: "m"}
+		_, err := c.SeedreamImage(context.Background(), "p", nil)
+		srv.Close()
+		if err == nil {
+			t.Fatalf("code %d: expected error", tc.code)
+		}
+		if strings.Contains(err.Error(), "ark-secret") {
+			t.Fatalf("code %d: error leaked key: %v", tc.code, err)
+		}
+		if tc.want == nil {
+			if errors.Is(err, ErrRateLimited) || errors.Is(err, ErrUpstreamUnavailable) {
+				t.Fatalf("code %d: should carry no sentinel: %v", tc.code, err)
+			}
+			continue
+		}
+		if !errors.Is(err, tc.want) {
+			t.Fatalf("code %d: want %v, got %v", tc.code, tc.want, err)
+		}
+	}
+}
+
+// TestSeedreamImageTimeoutClassified verifies a transport-level timeout surfaces
+// as ErrUpstreamTimeout. A stub RoundTripper returns a timing-out net.Error so
+// no real server or network wait is needed.
+func TestSeedreamImageTimeoutClassified(t *testing.T) {
+	c := &Client{
+		ArkKey:          "ark-secret",
+		SeedreamBaseURL: "http://upstream.invalid",
+		SeedreamModel:   "m",
+		HTTP:            &http.Client{Transport: timeoutRoundTripper{}},
+	}
+	_, err := c.SeedreamImage(context.Background(), "p", nil)
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if !errors.Is(err, ErrUpstreamTimeout) {
+		t.Fatalf("expected ErrUpstreamTimeout, got %v", err)
 	}
 }
 

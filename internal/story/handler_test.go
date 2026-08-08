@@ -2,6 +2,7 @@ package story
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/seven-agents/oh-my-commic/internal/ai"
 	"github.com/seven-agents/oh-my-commic/internal/auth"
 )
 
@@ -172,6 +174,32 @@ func TestStoryboardChatHandlerAIError502(t *testing.T) {
 	// The generic message must not leak the key or raw upstream detail.
 	if strings.Contains(w.Body.String(), "sk-x") {
 		t.Fatal("响应泄露了 API key")
+	}
+}
+
+// TestWriteStoryErrorClassifies verifies the AI-error sentinels map to their
+// distinct HTTP statuses via the wrapped error chain, with the generic fallback
+// staying 502.
+func TestWriteStoryErrorClassifies(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"not found", ErrNotFound, http.StatusNotFound},
+		{"rate limited", fmt.Errorf("story: chat: %w", ai.ErrRateLimited), http.StatusTooManyRequests},
+		{"timeout", fmt.Errorf("story: chat: %w", ai.ErrUpstreamTimeout), http.StatusGatewayTimeout},
+		{"unavailable", fmt.Errorf("story: chat: %w", ai.ErrUpstreamUnavailable), http.StatusBadGateway},
+		{"generic fallback", fmt.Errorf("story: parse: boom"), http.StatusBadGateway},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			writeStoryError(w, tc.err)
+			if w.Code != tc.want {
+				t.Fatalf("status = %d, want %d, body=%s", w.Code, tc.want, w.Body.String())
+			}
+		})
 	}
 }
 

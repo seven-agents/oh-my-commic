@@ -41,8 +41,12 @@ function defaultMessage(status: number): string {
       return '积分不足啦，画不了新图咯～'
     case 404:
       return '找不到这个内容'
+    case 429:
+      return '画师有点忙，稍等一下再试～'
     case 502:
       return '画笔累坏啦，稍后再试试～'
+    case 504:
+      return '这次等太久超时啦，再试一次～'
     default:
       return '出了点小状况，待会儿再来～'
   }

@@ -9,6 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/seven-agents/oh-my-commic/internal/ai"
 	"github.com/seven-agents/oh-my-commic/internal/auth"
 	"github.com/seven-agents/oh-my-commic/internal/models"
 )
@@ -124,6 +125,12 @@ func writeStoryError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		writeError(w, http.StatusNotFound, "资源不存在")
+	case errors.Is(err, ai.ErrRateLimited):
+		writeError(w, http.StatusTooManyRequests, "画师有点忙，稍等一下再试～（请求太频繁或额度紧张）")
+	case errors.Is(err, ai.ErrUpstreamTimeout):
+		writeError(w, http.StatusGatewayTimeout, "这次等太久超时啦，再试一次～")
+	case errors.Is(err, ai.ErrUpstreamUnavailable):
+		writeError(w, http.StatusBadGateway, "AI 服务暂时不可用，稍后再试～")
 	default:
 		writeError(w, http.StatusBadGateway, "AI 服务暂时不可用，请稍后再试")
 	}
