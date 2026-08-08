@@ -48,6 +48,7 @@ export type Chapter = {
   order: number
   title: string
   status: ChapterStatus
+  summary: string
   createdAt: string
 }
 

@@ -6,6 +6,7 @@ import BookWorkspace from './pages/BookWorkspace'
 import AssetEditor from './pages/AssetEditor'
 import ChapterEditor from './pages/ChapterEditor'
 import Reader from './pages/Reader'
+import BookReader from './pages/BookReader'
 import NotFound from './pages/NotFound'
 import type { ReactNode } from 'react'
 
@@ -20,6 +21,7 @@ export default function App() {
 
       <Route path="/" element={<Protected><Bookshelf /></Protected>} />
       <Route path="/books/:id" element={<Protected><BookWorkspace /></Protected>} />
+      <Route path="/books/:id/read" element={<Protected><BookReader /></Protected>} />
 
       {/* 资产编辑：新建 & 编辑，kind ∈ character|pet|scene，assetId 为 'new' 或数字 id */}
       <Route

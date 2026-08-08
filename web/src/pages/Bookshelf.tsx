@@ -94,7 +94,8 @@ export default function Bookshelf() {
               <BookCard
                 key={book.id}
                 book={book}
-                onOpen={(id) => navigate(`/books/${id}`)}
+                onRead={(id) => navigate(`/books/${id}/read`)}
+                onEdit={(id) => navigate(`/books/${id}`)}
                 onDelete={askDelete}
               />
             ))}
