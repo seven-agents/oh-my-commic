@@ -6,6 +6,7 @@ import { Button, Card, Input, LoadingClouds, Textarea } from '../components/ui'
 import { api } from '../api/client'
 import type { Character, CharacterType, Scene } from '../api/types'
 import { errorMessage } from '../api/errors'
+import { useSubmitOnce } from '../hooks/useSubmitOnce'
 
 type AssetKind = 'character' | 'pet' | 'scene'
 
@@ -40,7 +41,6 @@ export default function AssetEditor() {
 
   const [form, setForm] = useState<FormState>(EMPTY_FORM)
   const [loading, setLoading] = useState(isEdit)
-  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   const backTo = useMemo(() => `/books/${bookId}`, [bookId])
@@ -80,12 +80,11 @@ export default function AssetEditor() {
 
   const update = (patch: Partial<FormState>) => setForm((prev) => ({ ...prev, ...patch }))
 
-  const onSave = async () => {
+  const { submit: onSave, submitting: saving } = useSubmitOnce(async () => {
     if (!form.name.trim()) {
       setError('先起个名字吧～')
       return
     }
-    setSaving(true)
     setError('')
     try {
       if (isScene) {
@@ -108,10 +107,8 @@ export default function AssetEditor() {
       navigate(backTo)
     } catch (err) {
       setError(errorMessage(err))
-    } finally {
-      setSaving(false)
     }
-  }
+  })
 
   return (
     <div className="min-h-screen bg-cream">

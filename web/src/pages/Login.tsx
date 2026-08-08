@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { Button, Card, Input } from '../components/ui'
 import { useAuth } from '../auth/useAuth'
 import { ApiError } from '../api/client'
+import { useSubmitOnce } from '../hooks/useSubmitOnce'
 
 type Tab = 'login' | 'register'
 
@@ -16,7 +17,6 @@ export default function Login() {
   const [nickname, setNickname] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-  const [submitting, setSubmitting] = useState(false)
 
   const switchTab = (next: Tab) => {
     setTab(next)
@@ -39,15 +39,13 @@ export default function Login() {
     return '网络开小差了，待会儿再试试～'
   }
 
-  const onSubmit = async (e: FormEvent) => {
-    e.preventDefault()
+  const { submit, submitting } = useSubmitOnce(async () => {
     setError('')
     const invalid = validate()
     if (invalid) {
       setError(invalid)
       return
     }
-    setSubmitting(true)
     try {
       if (tab === 'login') {
         await login(nickname.trim(), password)
@@ -57,9 +55,12 @@ export default function Login() {
       navigate('/', { replace: true })
     } catch (err) {
       setError(messageFor(err))
-    } finally {
-      setSubmitting(false)
     }
+  })
+
+  const onSubmit = (e: FormEvent) => {
+    e.preventDefault()
+    void submit()
   }
 
   return (

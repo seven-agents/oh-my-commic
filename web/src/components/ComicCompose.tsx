@@ -5,6 +5,7 @@ import { ComicPage } from './ComicPage'
 import { api } from '../api/client'
 import type { Chapter, Panel } from '../api/types'
 import { errorMessage } from '../api/errors'
+import { useSubmitOnce } from '../hooks/useSubmitOnce'
 
 type ComicComposeProps = {
   chapterId: string
@@ -23,21 +24,17 @@ export function ComicCompose({
   onSaved,
   coverMode = false,
 }: ComicComposeProps) {
-  const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  const save = async () => {
-    setSaving(true)
+  const { submit: save, submitting: saving } = useSubmitOnce(async () => {
     setError('')
     try {
       const ch = await api.put<Chapter>(`/api/chapters/${chapterId}/status`, { status: 'done' })
       onSaved(ch)
     } catch (err) {
       setError(errorMessage(err))
-    } finally {
-      setSaving(false)
     }
-  }
+  })
 
   return (
     <div className="flex flex-col gap-6">
