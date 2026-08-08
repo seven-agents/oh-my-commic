@@ -23,7 +23,7 @@ export default function Community() {
     busyRef.current = true
     ;(async () => {
       try {
-        const data = await api.listCommunity(PAGE_SIZE, 0)
+        const data = await api.listCommunity({ limit: PAGE_SIZE, offset: 0 })
         if (!alive) return
         const list = data ?? []
         setItems(list)
@@ -49,7 +49,7 @@ export default function Community() {
     setLoadingMore(true)
     setError('')
     try {
-      const data = await api.listCommunity(PAGE_SIZE, offset)
+      const data = await api.listCommunity({ limit: PAGE_SIZE, offset })
       const list = data ?? []
       setItems((prev) => [...prev, ...list])
       setOffset((prev) => prev + list.length)

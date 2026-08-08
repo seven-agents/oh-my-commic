@@ -114,6 +114,8 @@ export interface Author {
   avatarUrl: string
 }
 
+export type CommunitySort = 'new' | 'hot'
+
 export interface CommunityBook {
   id: number
   title: string
