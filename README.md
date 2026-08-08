@@ -53,7 +53,8 @@ User
 | 前端 | React + Vite + TypeScript + Tailwind (SPA) |
 | 后端 | Go + chi，分层 handler → service → repository |
 | 存储 | SQLite + 本地图片目录 |
-| AI | 通义千问 DashScope：文本 `qwen-plus` + 生图 `wan2.2-t2i-plus` |
+| AI·对话逻辑 | 通义千问 DashScope 文本 `qwen-plus`（讲故事拆镜 + 逐格解析）→ `DASHSCOPE_API_KEY` |
+| AI·出图逻辑 | 火山方舟 Seedream `doubao-seedream-4-0-250828`（逐格出图 + 资产漫画化，最多 10 张参考图）→ `ARK_API_KEY` |
 
 ## 🚀 快速开始
 
@@ -61,7 +62,9 @@ User
 
 ```bash
 cp .env.example .env
-#   在 .env 填入 DASHSCOPE_API_KEY（通义千问 Key）
+#   在 .env 填入两个 Key（缺任一后端启动即 fatal）：
+#     DASHSCOPE_API_KEY —— 通义千问，对话/文本逻辑（拆镜、解析）
+#     ARK_API_KEY       —— 火山方舟，出图逻辑（Seedream 逐格出图、资产漫画化）
 ```
 
 ### 一键 demo（单服务，推荐面试演示）
@@ -94,15 +97,17 @@ cd web && npm install && npm run dev
 
 | 变量 | 说明 | 默认值 |
 |---|---|---|
-| `DASHSCOPE_API_KEY` | 通义千问 DashScope API Key（**必填，只放 .env，勿提交**） | — |
+| `DASHSCOPE_API_KEY` | 通义千问 DashScope Key —— **对话/文本逻辑**（拆镜、解析）（**必填，只放 .env**） | — |
+| `ARK_API_KEY` | 火山方舟 Ark Key —— **出图逻辑**（Seedream 逐格出图、资产漫画化）（**必填，只放 .env**） | — |
 | `PORT` | 服务监听端口 | `8080` |
 | `DB_PATH` | SQLite 文件路径 | `oh-my-commic.db` |
 | `DATA_DIR` | 上传/生成图片的本地存储目录 | `data` |
 | `WEB_DIST` | 前端构建产物目录（存在 `index.html` 时开启 SPA 托管） | `web/dist` |
-| `QWEN_TEXT_MODEL` | 文本模型 id | `qwen-plus` |
-| `QWEN_IMAGE_MODEL` | 生图模型 id | `wan2.2-t2i-plus` |
+| `QWEN_TEXT_MODEL` | 对话/文本模型 id | `qwen-plus` |
 | `QWEN_TEXT_BASE_URL` | 文本接口 base url | DashScope 兼容模式 |
-| `QWEN_IMAGE_BASE_URL` | 生图接口 base url | DashScope 原生 |
+| `SEEDREAM_MODEL` | 出图模型 id | `doubao-seedream-4-0-250828` |
+| `SEEDREAM_BASE_URL` | 出图接口 base url | 火山方舟 Ark v3 |
+| `RENDER_MAX_REFS` | 每格出图最多参考图数（≤10） | `10` |
 
 > ⚠️ 切勿把 API key 提交到 git。`.env`、`*.db`、`web/dist/`、`web/node_modules/` 均已在 `.gitignore` 中排除。
 
@@ -117,7 +122,7 @@ oh-my-commic/
 │   ├── asset/           # M3 角色/宠物/场景
 │   ├── chapter/         # M4
 │   ├── panel/           # M5 分镜
-│   ├── ai/              # M6 千问网关(文本编排+生图)
+│   ├── ai/              # M6 AI 网关：千问文本编排 + 火山方舟 Seedream 生图
 │   └── storage/         # M7 图片落地
 ├── web/                 # React 前端
 ├── docs/superpowers/specs/
