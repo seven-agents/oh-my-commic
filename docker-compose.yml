@@ -1,0 +1,23 @@
+services:
+  app:
+    image: oh-my-commic:latest
+    container_name: oh-my-commic
+    restart: unless-stopped
+    # 密钥与模型配置从同目录 .env 注入（DASHSCOPE_API_KEY / ARK_API_KEY / SEEDREAM_* 等）
+    env_file:
+      - .env
+    ports:
+      # 宿主 80 → 容器 8080：直接用 80 对外提供前端 + API + 图片
+      - "80:8080"
+    volumes:
+      # 持久化 SQLite 数据库 + 上传/生成的图片
+      - omc-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  omc-data:

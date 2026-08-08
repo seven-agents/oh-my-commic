@@ -1,0 +1,26 @@
+# 密钥绝不进镜像（运行时由 compose 的 env_file 注入）
+.env
+.env.local
+
+# 版本控制 / 脚手架
+.git
+.gitignore
+.superpowers
+
+# 前端依赖与产物（镜像内重新构建）
+web/node_modules
+web/dist
+node_modules
+
+# 本地数据 / 数据库（运行时用挂载卷）
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# 文档 / 编辑器
+docs
+*.md
+.idea
+.vscode
+.DS_Store
