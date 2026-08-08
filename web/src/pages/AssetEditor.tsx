@@ -82,6 +82,25 @@ export default function AssetEditor() {
 
   const update = (patch: Partial<FormState>) => setForm((prev) => ({ ...prev, ...patch }))
 
+  // 仅当编辑已有资产、且当前形象图是本地 /media/ 图时，才允许重新生成。
+  const canRegenerate = isEdit && form.imageUrl.startsWith('/media/')
+
+  // 重新生成：对当前锁定形象图再跑一次漫画化，覆盖预览并刷新顶栏积分。
+  // 复用同步守卫防双击重复 POST。
+  const { submit: onRegenerate, submitting: regenerating } = useSubmitOnce(async () => {
+    setError('')
+    try {
+      const path = `/api/v1/books/${bookId}/${isScene ? 'scenes' : 'characters'}/${assetId}/regenerate`
+      const next = isScene ? await api.post<Scene>(path) : await api.post<Character>(path)
+      update({ imageUrl: next.imageUrl })
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      // 重画会扣费（失败退还 / 余额不足 402），刷新 header 积分。
+      void refreshUser()
+    }
+  })
+
   const { submit: onSave, submitting: saving } = useSubmitOnce(async () => {
     if (!form.name.trim()) {
       setError('先起个名字吧～')
@@ -135,7 +154,7 @@ export default function AssetEditor() {
 
         {loading ? (
           <LoadingClouds label="正在读取…" />
-        ) : saving ? (
+        ) : saving || regenerating ? (
           <Card className="flex flex-col items-center gap-2 py-10 text-center">
             <LoadingClouds
               label={isScene ? '正在把场景画成绘本背景… ✨' : '正在把 TA 画成漫画角色，稍等一下下～ ✨'}
@@ -150,6 +169,12 @@ export default function AssetEditor() {
                 ? '保存时 AI 会把这张图画成吉卜力风格的绘本背景 ✨'
                 : '保存时 AI 会把这张图画成吉卜力风格的角色形象 ✨'}
             </p>
+
+            {canRegenerate && (
+              <Button variant="ghost" onClick={onRegenerate} loading={regenerating} className="-mt-2 self-center text-sm">
+                🔄 重新生成
+              </Button>
+            )}
 
             <Input
               id="asset-name"

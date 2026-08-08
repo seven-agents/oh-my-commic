@@ -352,6 +352,39 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v1/books/{bookId}/characters/{id}/regenerate:
+    parameters:
+      - $ref: "#/components/parameters/BookId"
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [assets]
+      summary: 重新生成角色/宠物形象图
+      description: >
+        对角色当前锁定的本地形象图（/media/{bookId}/...）再跑一次漫画化，
+        覆盖 imageUrl。无请求体。消耗一次积分（失败退还，余额不足 402）。
+        角色没有本地形象图时返回 400。
+      responses:
+        "200":
+          description: 更新后的角色
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Character"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "402":
+          $ref: "#/components/responses/PaymentRequired"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+        "504":
+          $ref: "#/components/responses/GatewayTimeout"
+
   /api/v1/books/{bookId}/scenes:
     parameters:
       - $ref: "#/components/parameters/BookId"
@@ -450,6 +483,39 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /api/v1/books/{bookId}/scenes/{id}/regenerate:
+    parameters:
+      - $ref: "#/components/parameters/BookId"
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [assets]
+      summary: 重新生成场景形象图
+      description: >
+        对场景当前锁定的本地形象图（/media/{bookId}/...）再跑一次漫画化，
+        覆盖 imageUrl。无请求体。消耗一次积分（失败退还，余额不足 402）。
+        场景没有本地形象图时返回 400。
+      responses:
+        "200":
+          description: 更新后的场景
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scene"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "402":
+          $ref: "#/components/responses/PaymentRequired"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/BadGateway"
+        "504":
+          $ref: "#/components/responses/GatewayTimeout"
 
   /api/v1/books/{bookId}/chapters:
     parameters:
