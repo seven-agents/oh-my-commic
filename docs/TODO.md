@@ -2,6 +2,15 @@
 
 评估维度：**功能完整性 / 稳定性 / 基本工程质量**。日期 2026-08-08。
 
+> **这是本项目的工作清单（source of truth）。** 上下文压缩(compact)后从本文件恢复：按"建议的下一步顺序"，从 **P0 顶部**开始，逐项打钩。每项都带实现思路与文件位置。开工约定见 `CLAUDE.md`（每功能一分支→测试→合并 main）。
+
+### P0 实现落点（文件速查）
+- CI → 新建 `.github/workflows/ci.yml`
+- 双提交 → 抽 `web/src/hooks/useSubmitOnce.ts`，套 `Bookshelf.tsx(CreateBookModal)`、`AssetEditor.tsx`；参考已修的 `ChapterList.tsx`(ref 守卫)
+- API 文档 → 更新 `docs/frontend-api.md`（storyboard-chat 只出 content、新增 `/api/panels/{id}/process`、Panel.content、Chapter.conversation/panelCount）
+- 配额保护 → 注册加口令：`internal/auth`（注册校验一个 `SIGNUP_CODE` env）+ 前端注册页加输入
+- AI 错误分类 → `internal/ai` 返回可辨识的 sentinel（配额/限流/超时）；`story`/`render`/`comicify` handler 映射不同文案
+
 ## 现状评估
 
 | 维度 | 评价 | 说明 |
