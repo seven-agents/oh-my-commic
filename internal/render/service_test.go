@@ -120,7 +120,7 @@ func newRenderTestEnv(t *testing.T) *renderTestEnv {
 	store := storage.Local{Root: t.TempDir()}
 
 	gen := &fakeGen{url: imgSrv.URL + "/image.png"}
-	svc := NewService(gen, panelSvc, chapterSvc, assetSvc, store, imgSrv.Client(), 4)
+	svc := NewService(gen, panelSvc, chapterSvc, assetSvc, bookRepo, store, imgSrv.Client(), 4)
 
 	return &renderTestEnv{
 		svc:      svc,
@@ -203,6 +203,72 @@ func (e *renderTestEnv) seedPanel(t *testing.T, userID int64) seededPanel {
 		t.Fatalf("replace panels: %v", err)
 	}
 	return seededPanel{bookID: b.ID, panelID: panels[0].ID, charID: ch.ID, sceneID: sc.ID}
+}
+
+// seedCoverPanel creates, for userID: a book, its cover chapter (via
+// EnsureCover), and a single panel under that cover chapter. It returns the ids.
+func (e *renderTestEnv) seedCoverPanel(t *testing.T, userID int64) seededPanel {
+	t.Helper()
+	b, err := e.books.Create(userID, "书", "ghibli", "")
+	if err != nil {
+		t.Fatalf("create book: %v", err)
+	}
+	cover, err := e.chapters.EnsureCover(userID, b.ID)
+	if err != nil {
+		t.Fatalf("ensure cover: %v", err)
+	}
+	panels, err := e.panels.ReplacePanels(userID, cover.ID, []models.Panel{
+		{Caption: "这本书的封面"},
+	})
+	if err != nil {
+		t.Fatalf("replace panels: %v", err)
+	}
+	return seededPanel{bookID: b.ID, panelID: panels[0].ID}
+}
+
+// TestRenderCoverPanelSyncsBookCover verifies that rendering a panel of a cover
+// chapter mirrors the stored image onto the book's cover_url.
+func TestRenderCoverPanelSyncsBookCover(t *testing.T) {
+	env := newRenderTestEnv(t)
+	sp := env.seedCoverPanel(t, 1)
+
+	updated, err := env.svc.RenderPanel(context.Background(), 1, sp.panelID)
+	if err != nil {
+		t.Fatalf("render cover panel: %v", err)
+	}
+
+	b, err := env.books.Get(1, sp.bookID)
+	if err != nil {
+		t.Fatalf("get book: %v", err)
+	}
+	if b.CoverURL != updated.ImageURL {
+		t.Fatalf("封面章渲染后 book.coverUrl 应同步为图片 %q, got %q", updated.ImageURL, b.CoverURL)
+	}
+	if b.CoverURL == "" {
+		t.Fatalf("book.coverUrl 不应为空")
+	}
+}
+
+// TestRenderNormalPanelDoesNotTouchCover verifies that rendering a panel of a
+// non-cover chapter leaves the book's cover_url untouched.
+func TestRenderNormalPanelDoesNotTouchCover(t *testing.T) {
+	env := newRenderTestEnv(t)
+	sp := env.seedPanel(t, 1)
+
+	before, err := env.books.Get(1, sp.bookID)
+	if err != nil {
+		t.Fatalf("get book before: %v", err)
+	}
+	if _, err := env.svc.RenderPanel(context.Background(), 1, sp.panelID); err != nil {
+		t.Fatalf("render panel: %v", err)
+	}
+	after, err := env.books.Get(1, sp.bookID)
+	if err != nil {
+		t.Fatalf("get book after: %v", err)
+	}
+	if after.CoverURL != before.CoverURL {
+		t.Fatalf("普通章渲染不应改动 book.coverUrl, before=%q after=%q", before.CoverURL, after.CoverURL)
+	}
 }
 
 // TestRenderPanelHappyPath verifies a full successful render: prompt built,
@@ -307,7 +373,7 @@ func TestRenderPanelNoRefsUsesText2Image(t *testing.T) {
 func TestRenderPanelCapsRefs(t *testing.T) {
 	env := newRenderTestEnv(t)
 	// Rebuild the service with a tight cap of 2 references.
-	env.svc = NewService(env.gen, env.panels, env.chapters, env.assets, env.store, env.imgSrv.Client(), 2)
+	env.svc = NewService(env.gen, env.panels, env.chapters, env.assets, env.books, env.store, env.imgSrv.Client(), 2)
 
 	b, err := env.books.Create(1, "书", "ghibli", "")
 	if err != nil {

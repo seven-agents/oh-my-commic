@@ -69,12 +69,21 @@ type ImageGenerator interface {
 	SeedreamImage(ctx context.Context, prompt string, refImageDataURIs []string) (string, error)
 }
 
+// CoverSetter sets a book's cover image URL, scoped to the owning user. It is
+// satisfied by *book.Repo via SetCover. The Service depends on this narrow
+// interface (defined where it is used) so a cover chapter's rendered panel can
+// be mirrored onto book.cover_url without a hard dependency on book internals.
+type CoverSetter interface {
+	SetCover(userID, bookID int64, coverURL string) (models.Book, error)
+}
+
 // Service orchestrates the render-one-panel flow.
 type Service struct {
 	gen      ImageGenerator
 	panels   *panel.Service
 	chapters *chapter.Service
 	assets   *asset.Service
+	cover    CoverSetter
 	store    storage.Local
 	http     *http.Client
 	maxRefs  int
@@ -89,6 +98,7 @@ func NewService(
 	panels *panel.Service,
 	chapters *chapter.Service,
 	assets *asset.Service,
+	cover CoverSetter,
 	store storage.Local,
 	httpClient *http.Client,
 	maxRefs int,
@@ -104,6 +114,7 @@ func NewService(
 		panels:   panels,
 		chapters: chapters,
 		assets:   assets,
+		cover:    cover,
 		store:    store,
 		http:     httpClient,
 		maxRefs:  maxRefs,
@@ -174,6 +185,15 @@ func (s *Service) RenderPanel(ctx context.Context, userID, panelID int64) (model
 	updated, err := s.panels.SetPanelImage(userID, panelID, localURL)
 	if err != nil {
 		return models.Panel{}, fmt.Errorf("render panel %d: set image: %w", panelID, err)
+	}
+
+	// If this panel belongs to a cover chapter, mirror its image onto the book's
+	// cover_url. This is a best-effort side sync: a failure here must never fail
+	// the render (the panel is already saved), so log and continue.
+	if ch.IsCover {
+		if _, err := s.cover.SetCover(userID, ch.BookID, localURL); err != nil {
+			log.Printf("render: sync cover for book %d failed: %v", ch.BookID, err)
+		}
 	}
 	return updated, nil
 }

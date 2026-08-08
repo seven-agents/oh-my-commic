@@ -82,6 +82,73 @@ func TestCreateAndListOrderAutoIncrements(t *testing.T) {
 	}
 }
 
+// TestEnsureCoverIsSingletonWithOrderZero verifies EnsureCover creates exactly
+// one cover chapter (order 0, is_cover true, title "封面") and that calling it
+// again returns the SAME chapter rather than creating a second one.
+func TestEnsureCoverIsSingletonWithOrderZero(t *testing.T) {
+	svc, books := newTestService(t)
+	b, err := books.Create(1, "书", "ghibli", "")
+	if err != nil {
+		t.Fatalf("create book: %v", err)
+	}
+
+	first, err := svc.EnsureCover(1, b.ID)
+	if err != nil {
+		t.Fatalf("ensure cover (create): %v", err)
+	}
+	if first.Order != 0 {
+		t.Fatalf("封面章 order 应为 0, got %d", first.Order)
+	}
+	if !first.IsCover {
+		t.Fatalf("封面章 IsCover 应为 true, got false")
+	}
+	if first.Title != "封面" {
+		t.Fatalf("封面章标题应为 封面, got %q", first.Title)
+	}
+	if first.Status != "draft" {
+		t.Fatalf("封面章状态应为 draft, got %q", first.Status)
+	}
+
+	second, err := svc.EnsureCover(1, b.ID)
+	if err != nil {
+		t.Fatalf("ensure cover (find): %v", err)
+	}
+	if second.ID != first.ID {
+		t.Fatalf("重复调用应返回同一封面章, first=%d second=%d", first.ID, second.ID)
+	}
+
+	// Only one cover chapter exists in the book's chapter list.
+	list, err := svc.ListChapters(1, b.ID)
+	if err != nil {
+		t.Fatalf("list chapters: %v", err)
+	}
+	covers := 0
+	for _, c := range list {
+		if c.IsCover {
+			covers++
+		}
+	}
+	if covers != 1 {
+		t.Fatalf("每本书应只有 1 个封面章, got %d", covers)
+	}
+}
+
+// TestEnsureCoverCrossUser verifies user 2 cannot create/find a cover chapter on
+// user 1's book; the ownership gate surfaces ErrNotFound.
+func TestEnsureCoverCrossUser(t *testing.T) {
+	svc, books := newTestService(t)
+	b, err := books.Create(1, "书", "ghibli", "")
+	if err != nil {
+		t.Fatalf("create book: %v", err)
+	}
+	if _, err := svc.EnsureCover(2, b.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("跨用户 EnsureCover 应返回 ErrNotFound, got %v", err)
+	}
+	if _, err := svc.EnsureCover(1, 999); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("未知书籍 EnsureCover 应返回 ErrNotFound, got %v", err)
+	}
+}
+
 // TestLegalStatusFlow walks the full happy-path transition chain
 // draft → storyboarding → rendering → done.
 func TestLegalStatusFlow(t *testing.T) {

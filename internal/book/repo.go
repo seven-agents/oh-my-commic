@@ -132,6 +132,31 @@ func (r *Repo) Update(userID, bookID int64, title, style, summary string) (model
 	return r.Get(userID, bookID)
 }
 
+// SetCover sets the cover_url of the book owned by userID and refreshes
+// updated_at. It returns ErrNotFound if the book does not exist or belongs to
+// another user. The refreshed book row is returned.
+func (r *Repo) SetCover(userID, bookID int64, coverURL string) (models.Book, error) {
+	res, err := r.db.Exec(
+		`UPDATE books
+		   SET cover_url = ?, updated_at = datetime('now')
+		 WHERE id = ? AND user_id = ?`,
+		coverURL, bookID, userID,
+	)
+	if err != nil {
+		return models.Book{}, fmt.Errorf("set cover for book %d for user %d: %w", bookID, userID, err)
+	}
+
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return models.Book{}, fmt.Errorf("set cover for book %d for user %d: rows affected: %w", bookID, userID, err)
+	}
+	if affected == 0 {
+		return models.Book{}, ErrNotFound
+	}
+
+	return r.Get(userID, bookID)
+}
+
 // Delete removes the book owned by userID. It returns ErrNotFound if the book
 // does not exist or belongs to another user.
 func (r *Repo) Delete(userID, bookID int64) error {

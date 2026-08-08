@@ -59,6 +59,7 @@ type Chapter struct {
 	Title     string `json:"title"`
 	Status    string `json:"status"`
 	Summary   string `json:"summary"`
+	IsCover   bool   `json:"isCover"`
 	CreatedAt string `json:"createdAt"`
 }
 

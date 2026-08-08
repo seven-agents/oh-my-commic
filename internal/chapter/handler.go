@@ -27,6 +27,7 @@ func NewHandler(svc *Service) *Handler {
 //
 //	GET  /api/books/{bookId}/chapters
 //	POST /api/books/{bookId}/chapters
+//	POST /api/books/{bookId}/cover-chapter
 //	GET  /api/chapters/{id}
 //	PUT  /api/chapters/{id}/status
 //
@@ -36,6 +37,7 @@ func NewHandler(svc *Service) *Handler {
 func (h *Handler) Mount(r chi.Router) {
 	r.Get("/api/books/{bookId}/chapters", h.List)
 	r.Post("/api/books/{bookId}/chapters", h.Create)
+	r.Post("/api/books/{bookId}/cover-chapter", h.EnsureCover)
 	r.Get("/api/chapters/{id}", h.Get)
 	r.Put("/api/chapters/{id}/status", h.SetStatus)
 }
@@ -82,6 +84,23 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, created)
+}
+
+// EnsureCover handles POST /api/books/{bookId}/cover-chapter. It returns the
+// book's single cover chapter, creating it on first call. The response is 200
+// whether the cover chapter was found or freshly created.
+func (h *Handler) EnsureCover(w http.ResponseWriter, r *http.Request) {
+	userID := auth.UserID(r.Context())
+	bookID, ok := parseBookID(w, r)
+	if !ok {
+		return
+	}
+	cover, err := h.svc.EnsureCover(userID, bookID)
+	if err != nil {
+		writeChapterError(w, err, "创建封面章失败")
+		return
+	}
+	writeJSON(w, http.StatusOK, cover)
 }
 
 // Get handles GET /api/chapters/{id}.

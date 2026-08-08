@@ -54,6 +54,63 @@ func TestChaptersSummaryColumn(t *testing.T) {
 	}
 }
 
+// TestChaptersIsCoverColumn verifies the is_cover column exists on the chapters
+// table for a fresh DB (created inline by the CREATE TABLE statement).
+func TestChaptersIsCoverColumn(t *testing.T) {
+	d, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	cols := columnSet(t, d, "chapters")
+	if !cols["is_cover"] {
+		t.Fatalf("chapters 表缺少列 %q，实际列: %v", "is_cover", cols)
+	}
+}
+
+// TestMigrateAddsIsCoverToLegacyChapters proves the idempotent ALTER path for
+// chapters.is_cover: a legacy chapters table without the column gains it after
+// Migrate, and a second Migrate run does not fail on the duplicate column.
+func TestMigrateAddsIsCoverToLegacyChapters(t *testing.T) {
+	d, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	// panels FK-references chapters, so drop it first to allow dropping chapters.
+	if _, err := d.Exec(`DROP TABLE panels`); err != nil {
+		t.Fatalf("drop panels: %v", err)
+	}
+	if _, err := d.Exec(`DROP TABLE chapters`); err != nil {
+		t.Fatalf("drop chapters: %v", err)
+	}
+	// Recreate chapters WITHOUT the is_cover column to simulate a legacy DB.
+	if _, err := d.Exec(`CREATE TABLE chapters (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  book_id INTEGER NOT NULL,
+  "order" INTEGER NOT NULL DEFAULT 0,
+  title TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'draft',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`); err != nil {
+		t.Fatalf("create legacy chapters: %v", err)
+	}
+
+	if err := Migrate(d); err != nil {
+		t.Fatalf("migrate legacy DB: %v", err)
+	}
+	if cols := columnSet(t, d, "chapters"); !cols["is_cover"] {
+		t.Fatalf("迁移后 chapters 表仍缺列 %q，实际列: %v", "is_cover", cols)
+	}
+
+	// A repeat Migrate must tolerate the now-duplicate column.
+	if err := Migrate(d); err != nil {
+		t.Fatalf("重复迁移应幂等，got: %v", err)
+	}
+}
+
 // TestMigrateAddsSummaryToLegacyChapters proves the idempotent ALTER path for
 // chapters.summary: a legacy chapters table without the column gains it after
 // Migrate, and a second Migrate run does not fail on the duplicate column.
