@@ -2,6 +2,7 @@ package render
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/seven-agents/oh-my-commic/internal/ai"
 	"github.com/seven-agents/oh-my-commic/internal/auth"
 	"github.com/seven-agents/oh-my-commic/internal/models"
 )
@@ -125,5 +127,34 @@ func TestRenderHandlerGenError502(t *testing.T) {
 	}
 	if strings.Contains(w.Body.String(), "sk-") || strings.Contains(w.Body.String(), "secret-upstream") {
 		t.Fatal("response leaked upstream detail")
+	}
+}
+
+// TestWriteRenderErrorClassifies verifies the AI-error sentinels map to their
+// distinct HTTP statuses via the wrapped error chain, and the generic fallback
+// stays 502. The sentinels are wrapped (as the service layer does with %w) so
+// the test also proves errors.Is reaches through the chain.
+func TestWriteRenderErrorClassifies(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"rate limited", fmt.Errorf("render: generate: %w", ai.ErrRateLimited), http.StatusTooManyRequests},
+		{"timeout", fmt.Errorf("render: generate: %w", ai.ErrUpstreamTimeout), http.StatusGatewayTimeout},
+		{"unavailable", fmt.Errorf("render: generate: %w", ai.ErrUpstreamUnavailable), http.StatusBadGateway},
+		{"generic fallback", errGen, http.StatusBadGateway},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			writeRenderError(w, tc.err)
+			if w.Code != tc.want {
+				t.Fatalf("status = %d, want %d, body=%s", w.Code, tc.want, w.Body.String())
+			}
+			if strings.Contains(w.Body.String(), "sk-") || strings.Contains(w.Body.String(), "secret-upstream") {
+				t.Fatal("response leaked upstream detail")
+			}
+		})
 	}
 }

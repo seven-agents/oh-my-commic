@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -46,6 +47,77 @@ func TestChatNon2xxReturnsError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "401") {
 		t.Fatalf("错误应含状态码: %v", err)
+	}
+}
+
+// TestChatNon2xxNeverLeaksBody verifies the upstream response body is never
+// embedded in the error (it may echo the Bearer key), only the status code.
+func TestChatNon2xxNeverLeaksBody(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		w.Write([]byte(`{"error":"leaked-secret-body sk-x"}`))
+	}))
+	defer ts.Close()
+	c := Client{Key: "sk-x", TextBaseURL: ts.URL, TextModel: "qwen-plus", HTTP: ts.Client()}
+	_, err := c.Chat(context.Background(), []Msg{{Role: "user", Content: "hi"}})
+	if err == nil {
+		t.Fatal("期望 non-2xx 报错")
+	}
+	if strings.Contains(err.Error(), "leaked-secret-body") {
+		t.Fatalf("错误泄露了上游 body: %v", err)
+	}
+}
+
+// TestChatClassifiesStatus verifies a 429 wraps ErrRateLimited and a 5xx wraps
+// ErrUpstreamUnavailable, while other non-2xx carry no sentinel.
+func TestChatClassifiesStatus(t *testing.T) {
+	cases := []struct {
+		code int
+		want error
+	}{
+		{http.StatusTooManyRequests, ErrRateLimited},
+		{http.StatusInternalServerError, ErrUpstreamUnavailable},
+		{http.StatusServiceUnavailable, ErrUpstreamUnavailable},
+		{http.StatusBadRequest, nil},
+	}
+	for _, tc := range cases {
+		ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(tc.code)
+		}))
+		c := Client{Key: "sk-x", TextBaseURL: ts.URL, TextModel: "qwen-plus", HTTP: ts.Client()}
+		_, err := c.Chat(context.Background(), []Msg{{Role: "user", Content: "hi"}})
+		ts.Close()
+		if err == nil {
+			t.Fatalf("code %d: 期望报错", tc.code)
+		}
+		if tc.want == nil {
+			if errors.Is(err, ErrRateLimited) || errors.Is(err, ErrUpstreamUnavailable) {
+				t.Fatalf("code %d: 不应带 sentinel: %v", tc.code, err)
+			}
+			continue
+		}
+		if !errors.Is(err, tc.want) {
+			t.Fatalf("code %d: 期望 %v, got %v", tc.code, tc.want, err)
+		}
+	}
+}
+
+// TestChatTimeoutClassified verifies a transport-level timeout surfaces as
+// ErrUpstreamTimeout through the wrapped chain. A stub RoundTripper returns a
+// timing-out net.Error so no real server or network wait is needed.
+func TestChatTimeoutClassified(t *testing.T) {
+	c := Client{
+		Key:         "sk-x",
+		TextBaseURL: "http://upstream.invalid",
+		TextModel:   "qwen-plus",
+		HTTP:        &http.Client{Transport: timeoutRoundTripper{}},
+	}
+	_, err := c.Chat(context.Background(), []Msg{{Role: "user", Content: "hi"}})
+	if err == nil {
+		t.Fatal("期望超时报错")
+	}
+	if !errors.Is(err, ErrUpstreamTimeout) {
+		t.Fatalf("期望 ErrUpstreamTimeout, got %v", err)
 	}
 }
 
