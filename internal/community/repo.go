@@ -171,3 +171,104 @@ func (r *Repo) chapterPanels(chapterID int64) ([]models.Panel, error) {
 	}
 	return out, nil
 }
+
+// ensurePublic returns ErrNotFound unless bookID exists and is public. Used to
+// gate like / view so private books never leak via a 200.
+func (r *Repo) ensurePublic(tx *sql.Tx, bookID int64) error {
+	var one int
+	err := tx.QueryRow(`SELECT 1 FROM books WHERE id = ? AND is_public = 1`, bookID).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("ensure public %d: %w", bookID, err)
+	}
+	return nil
+}
+
+// Like records userID's like of a public book (idempotent) and returns the fresh
+// count. The like row insert and the counter bump happen in one transaction; the
+// counter is only incremented when a new row is actually inserted.
+func (r *Repo) Like(userID, bookID int64) (LikeResult, error) {
+	return r.toggleLike(userID, bookID, true)
+}
+
+// Unlike removes userID's like (idempotent) and returns the fresh count.
+func (r *Repo) Unlike(userID, bookID int64) (LikeResult, error) {
+	return r.toggleLike(userID, bookID, false)
+}
+
+func (r *Repo) toggleLike(userID, bookID int64, like bool) (LikeResult, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return LikeResult{}, fmt.Errorf("like tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	if err := r.ensurePublic(tx, bookID); err != nil {
+		return LikeResult{}, err
+	}
+
+	var res sql.Result
+	if like {
+		res, err = tx.Exec(`INSERT OR IGNORE INTO book_likes (book_id, user_id) VALUES (?, ?)`, bookID, userID)
+	} else {
+		res, err = tx.Exec(`DELETE FROM book_likes WHERE book_id = ? AND user_id = ?`, bookID, userID)
+	}
+	if err != nil {
+		return LikeResult{}, fmt.Errorf("toggle like: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return LikeResult{}, fmt.Errorf("toggle like rows: %w", err)
+	}
+	if affected == 1 {
+		delta := 1
+		if !like {
+			delta = -1
+		}
+		if _, err := tx.Exec(`UPDATE books SET like_count = like_count + ? WHERE id = ?`, delta, bookID); err != nil {
+			return LikeResult{}, fmt.Errorf("bump like_count: %w", err)
+		}
+	}
+
+	var count int
+	if err := tx.QueryRow(`SELECT like_count FROM books WHERE id = ?`, bookID).Scan(&count); err != nil {
+		return LikeResult{}, fmt.Errorf("read like_count: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return LikeResult{}, fmt.Errorf("like commit: %w", err)
+	}
+	return LikeResult{LikeCount: count, Liked: like}, nil
+}
+
+// RecordView records a unique view of a public book keyed by viewerKey. Repeat
+// views with the same key are ignored; view_count is bumped only on first sight.
+func (r *Repo) RecordView(bookID int64, viewerKey string) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return fmt.Errorf("view tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	if err := r.ensurePublic(tx, bookID); err != nil {
+		return err
+	}
+	res, err := tx.Exec(`INSERT OR IGNORE INTO book_views (book_id, viewer_key) VALUES (?, ?)`, bookID, viewerKey)
+	if err != nil {
+		return fmt.Errorf("insert view: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("view rows: %w", err)
+	}
+	if affected == 1 {
+		if _, err := tx.Exec(`UPDATE books SET view_count = view_count + 1 WHERE id = ?`, bookID); err != nil {
+			return fmt.Errorf("bump view_count: %w", err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("view commit: %w", err)
+	}
+	return nil
+}
