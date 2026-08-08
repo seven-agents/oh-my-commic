@@ -1,5 +1,6 @@
 import { BookCover } from './BookCover'
 import { Button } from './ui'
+import { VisibilityToggle } from './VisibilityToggle'
 import type { Book } from '../api/types'
 
 type BookCardProps = {
@@ -7,10 +8,11 @@ type BookCardProps = {
   onRead: (id: number) => void
   onEdit: (id: number) => void
   onDelete: (book: Book) => void
+  onToggleVisibility: (book: Book) => Promise<void>
 }
 
 // 书架上的一本书：封面点开即「阅读」，下方两枚按钮「阅读 / 编辑」，右上角删除小按钮。
-export function BookCard({ book, onRead, onEdit, onDelete }: BookCardProps) {
+export function BookCard({ book, onRead, onEdit, onDelete, onToggleVisibility }: BookCardProps) {
   return (
     <div className="group relative animate-pop-in">
       <button
@@ -45,6 +47,8 @@ export function BookCard({ book, onRead, onEdit, onDelete }: BookCardProps) {
           ✏️ 编辑
         </Button>
       </div>
+
+      <VisibilityToggle book={book} onToggle={onToggleVisibility} />
 
       <button
         type="button"
