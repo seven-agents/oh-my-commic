@@ -1,94 +1,50 @@
-import { useState } from 'react'
 import { Button, LoadingClouds } from './ui'
+import { StoryboardPanelCard } from './StoryboardPanelCard'
 import { mediaUrl } from '../api/media'
 import type { Panel } from '../api/types'
-import { type AssetIndex, resolveActors, resolveScene } from './chapter/assetLookup'
+import type { AssetIndex } from './chapter/assetLookup'
 
 type PanelCardProps = {
   panel: Panel
   index: AssetIndex
+  saving: boolean
+  processing: boolean
   // 是否已解析（结构字段就绪）；未解析时禁止出图。
   canRender: boolean
-  onSaveCaption: (caption: string) => void
-  onRemoveActor: (actorId: number) => void
+  onPatch: (patch: Partial<Panel>) => void
+  onProcess: () => void
   onRender: () => void
 }
 
-// Stage ② 单张分镜卡片：可编辑字幕、增删角色 chip、逐格生图。
+// Stage ② 出图阶段单卡：复用 StoryboardPanelCard 的可编辑输入/输出 + 重新解析，
+// 再在下方加上「图片预览 + 生成这张图」出图脚注，避免重复实现编辑 UI。
 export function PanelCard({
   panel,
   index,
+  saving,
+  processing,
   canRender,
-  onSaveCaption,
-  onRemoveActor,
+  onPatch,
+  onProcess,
   onRender,
 }: PanelCardProps) {
-  const [caption, setCaption] = useState(panel.caption)
-  const actors = resolveActors(panel.characterIds, index)
-  const scene = resolveScene(panel.sceneId, index)
-
-  const commitCaption = () => {
-    const trimmed = caption.trim()
-    if (trimmed !== panel.caption) onSaveCaption(trimmed)
-  }
-
   return (
-    <div className="flex flex-col gap-3 rounded-4xl bg-white p-4 shadow-soft">
-      <div className="flex items-center justify-between">
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-cream font-display font-bold text-ink-soft shadow-soft-sm">
-          {panel.order + 1}
-        </span>
-        <span className="font-display text-sm font-semibold text-ink-soft">第 {panel.order + 1} 格</span>
-      </div>
-
-      <PanelImage panel={panel} canRender={canRender} onRender={onRender} />
-
-      {panel.location && (
-        <p className="px-1 text-xs font-semibold text-ink-soft">📍 {panel.location}</p>
-      )}
-
-      <textarea
-        value={caption}
-        onChange={(e) => setCaption(e.target.value)}
-        onBlur={commitCaption}
-        rows={2}
-        placeholder="这一格讲了什么…"
-        className="field resize-none text-sm"
+    <div className="flex flex-col gap-3">
+      <StoryboardPanelCard
+        panel={panel}
+        index={index}
+        saving={saving}
+        processing={processing}
+        onPatch={onPatch}
+        onProcess={onProcess}
       />
-
-      {(actors.length > 0 || scene) && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          {actors.map((a) => (
-            <span
-              key={a.id}
-              className="inline-flex items-center gap-1 rounded-full bg-sky/20 px-2.5 py-1 text-xs font-semibold text-sky-deep"
-            >
-              {a.emoji} {a.name}
-              {panel.charExpressions?.[a.id] && (
-                <span className="font-normal text-sky-deep/70">（{panel.charExpressions[a.id]}）</span>
-              )}
-              <button
-                type="button"
-                onClick={() => onRemoveActor(a.id)}
-                className="ml-0.5 text-sky-deep/60 hover:text-coral"
-                aria-label={`移除 ${a.name}`}
-              >
-                ✕
-              </button>
-            </span>
-          ))}
-          {scene && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-meadow/25 px-2.5 py-1 text-xs font-semibold text-meadow-deep">
-              🏞️ {scene.name}
-            </span>
-          )}
-        </div>
-      )}
+      <PanelRenderFooter panel={panel} canRender={canRender} onRender={onRender} />
     </div>
   )
 }
 
-function PanelImage({
+// 出图脚注：图片预览（done/rendering/failed）+「生成这张图」按钮（未解析禁用并提示）。
+function PanelRenderFooter({
   panel,
   canRender,
   onRender,
@@ -139,17 +95,17 @@ function PanelImage({
   // pending：未解析的格禁止出图，给出提示。
   if (!canRender) {
     return (
-      <div className="flex aspect-[4/3] flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed border-ink/10 bg-cream/40 px-4 text-center">
+      <div className="flex flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed border-ink/10 bg-cream/40 px-4 py-5 text-center">
         <span className="text-2xl" aria-hidden>
           ✨
         </span>
-        <p className="text-sm font-semibold text-ink-soft">先点「解析这格」再生成图哦</p>
+        <p className="text-sm font-semibold text-ink-soft">先点「重新解析」再生成图哦</p>
       </div>
     )
   }
 
   return (
-    <div className="flex aspect-[4/3] flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed border-ink/10 bg-cream/40">
+    <div className="flex flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed border-ink/10 bg-cream/40 py-5">
       <Button onClick={onRender} className="text-sm">
         🎨 生成这张图
       </Button>

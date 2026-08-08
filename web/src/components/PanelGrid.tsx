@@ -1,4 +1,4 @@
-import { useMemo, useState, type Dispatch, type SetStateAction } from 'react'
+import { useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { Button, Card } from './ui'
 import { PanelCard } from './PanelCard'
 import { api } from '../api/client'
@@ -14,40 +14,66 @@ type PanelGridProps = {
   onNext: () => void
 }
 
-// Stage ② 画分镜：出场概览 + 逐格生图 + 全部生成。
+// PUT 时保留全部可编辑字段（含 content + imagePrompt），避免丢字段。
+function panelBody(panel: Panel) {
+  return {
+    content: panel.content,
+    caption: panel.caption,
+    characterIds: panel.characterIds,
+    sceneId: panel.sceneId,
+    imagePrompt: panel.imagePrompt,
+    location: panel.location,
+    event: panel.event,
+    charExpressions: panel.charExpressions,
+  }
+}
+
+// Stage ② 逐格出图：出场概览 + 可编辑输入/输出 + 重新解析 + 逐格/全部生成。
 export function PanelGrid({ panels, index, onPanelsChange, onNext }: PanelGridProps) {
   const [error, setError] = useState('')
   const [bulk, setBulk] = useState(false)
+  const [savingId, setSavingId] = useState<number | null>(null)
+  const [processingId, setProcessingId] = useState<number | null>(null)
+  // ref 防重入：全部生成 / 重新解析进行中时忽略重复触发。
+  const bulkRef = useRef(false)
+  const processRef = useRef(false)
 
   // 函数式更新：每次都基于最新 state 打补丁，避免快照覆盖已生成分镜。
   const applyPanel = (id: number, patch: Partial<Panel>) =>
     onPanelsChange((prev) => prev.map((p) => (p.id === id ? { ...p, ...patch } : p)))
 
   const savePanel = async (panel: Panel, patch: Partial<Panel>) => {
+    setSavingId(panel.id)
     setError('')
-    const merged = { ...panel, ...patch }
-    const body = {
-      content: merged.content,
-      caption: merged.caption,
-      characterIds: merged.characterIds,
-      sceneId: merged.sceneId,
-      imagePrompt: merged.imagePrompt,
-      location: merged.location,
-      event: merged.event,
-      charExpressions: merged.charExpressions,
-    }
     try {
-      const saved = await api.put<Panel>(`/api/panels/${panel.id}`, body)
+      const saved = await api.put<Panel>(`/api/panels/${panel.id}`, panelBody({ ...panel, ...patch }))
       applyPanel(saved.id, saved)
     } catch (err) {
       setError(errorMessage(err))
+    } finally {
+      setSavingId(null)
     }
   }
 
-  const renderPanel = async (panel: Panel) => {
-    // 未解析的格不出图（会画出没内容的通用图）。
-    if (!canRenderPanel(panel)) return
+  // 重新解析这格：从当前 content 重新推导结构字段，覆盖回填。
+  const processPanel = async (panel: Panel) => {
+    if (processRef.current) return
+    processRef.current = true
+    setProcessingId(panel.id)
     setError('')
+    try {
+      const done = await api.post<Panel>(`/api/panels/${panel.id}/process`)
+      applyPanel(done.id, done)
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setProcessingId(null)
+      processRef.current = false
+    }
+  }
+
+  // 单格出图：立即置 rendering，成功回填、失败标 failed。
+  const renderOne = async (panel: Panel) => {
     applyPanel(panel.id, { status: 'rendering' })
     try {
       const done = await api.post<Panel>(`/api/panels/${panel.id}/render`)
@@ -58,23 +84,26 @@ export function PanelGrid({ panels, index, onPanelsChange, onNext }: PanelGridPr
     }
   }
 
+  const renderPanel = async (panel: Panel) => {
+    // 未解析的格不出图（会画出没内容的通用图）。
+    if (!canRenderPanel(panel)) return
+    setError('')
+    await renderOne(panel)
+  }
+
+  // 全部生成：并发触发所有【已解析且非 done】的格，每格立即显示"生成中"、各自独立完成。
   const renderAll = async () => {
+    if (bulkRef.current) return
+    bulkRef.current = true
     setBulk(true)
     setError('')
-    // 逐格顺序生成，避免压垮上游；每格用函数式更新叠加到最新 state。
-    // 未解析的格跳过（无结构字段，出图无意义）。
-    for (const p of panels) {
-      if (p.status === 'done' || !canRenderPanel(p)) continue
-      applyPanel(p.id, { status: 'rendering' })
-      try {
-        const done = await api.post<Panel>(`/api/panels/${p.id}/render`)
-        applyPanel(done.id, done)
-      } catch (err) {
-        setError(errorMessage(err))
-        applyPanel(p.id, { status: 'failed' })
-      }
+    const renderable = panels.filter((p) => p.status !== 'done' && canRenderPanel(p))
+    try {
+      await Promise.all(renderable.map((p) => renderOne(p)))
+    } finally {
+      setBulk(false)
+      bulkRef.current = false
     }
-    setBulk(false)
   }
 
   const summary = useMemo(() => buildCastSummary(panels, index), [panels, index])
@@ -115,7 +144,7 @@ export function PanelGrid({ panels, index, onPanelsChange, onNext }: PanelGridPr
 
       {unprocessedCount > 0 && (
         <p className="rounded-2xl bg-peach/15 px-4 py-2.5 text-center text-sm font-semibold text-ink-soft">
-          还有 {unprocessedCount} 格没解析，先回上一步点「解析这格」再出图哦
+          还有 {unprocessedCount} 格没解析，点这一格的「🔁 重新解析这格」再出图哦
         </p>
       )}
 
@@ -131,11 +160,11 @@ export function PanelGrid({ panels, index, onPanelsChange, onNext }: PanelGridPr
             key={panel.id}
             panel={panel}
             index={index}
+            saving={savingId === panel.id}
+            processing={processingId === panel.id}
             canRender={canRenderPanel(panel)}
-            onSaveCaption={(caption) => savePanel(panel, { caption })}
-            onRemoveActor={(actorId) =>
-              savePanel(panel, { characterIds: panel.characterIds.filter((id) => id !== actorId) })
-            }
+            onPatch={(patch) => savePanel(panel, patch)}
+            onProcess={() => processPanel(panel)}
             onRender={() => renderPanel(panel)}
           />
         ))}
