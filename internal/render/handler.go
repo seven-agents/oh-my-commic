@@ -73,6 +73,8 @@ func writeRenderError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		writeError(w, http.StatusNotFound, "资源不存在")
+	case errors.Is(err, ErrInsufficientCredits):
+		writeError(w, http.StatusPaymentRequired, "积分不足，无法生成图片")
 	default:
 		writeError(w, http.StatusBadGateway, "生成图片失败，请稍后再试")
 	}

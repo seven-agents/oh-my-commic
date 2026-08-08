@@ -53,6 +53,7 @@ var tinyPNG = []byte{
 type handlerTestEnv struct {
 	handler *Handler
 	books   *book.Repo
+	users   *auth.UserRepo
 	store   storage.Local
 	editor  *stubEditor
 	imgSrv  *httptest.Server
@@ -83,12 +84,15 @@ func newHandlerTestEnv(t *testing.T) *handlerTestEnv {
 	svc := NewService(NewRepo(d), books)
 	store := storage.Local{Root: t.TempDir()}
 	editor := &stubEditor{remoteURL: imgSrv.URL + "/styled.png"}
-	comic := comicify.NewService(editor, store, imgSrv.Client())
+	// The seeded users carry the default credit balance from the migration, so
+	// the real UserRepo doubles as the comicify credit ledger here.
+	users := auth.NewUserRepo(d)
+	comic := comicify.NewService(editor, users, 1, store, imgSrv.Client())
 	h := NewHandler(svc, store, comic)
 
 	r := chi.NewRouter()
 	h.Mount(r)
-	return &handlerTestEnv{handler: h, books: books, store: store, editor: editor, imgSrv: imgSrv, router: r}
+	return &handlerTestEnv{handler: h, books: books, users: users, store: store, editor: editor, imgSrv: imgSrv, router: r}
 }
 
 // seedUpload writes a stored upload under bookID and returns its /media URL, as
@@ -474,6 +478,36 @@ func TestCreateCharacterComicifyErrorIs502(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "boom") {
 		t.Fatalf("error leaked upstream detail: %s", rec.Body)
+	}
+}
+
+// TestCreateCharacterInsufficientCreditsIs402 verifies that when the caller has
+// no credits, comic-ification is rejected with 402 and the image editor is never
+// called.
+func TestCreateCharacterInsufficientCreditsIs402(t *testing.T) {
+	env := newHandlerTestEnv(t)
+	// Drain user 1's default balance (100) to 0 so the up-front charge fails.
+	if ok, err := env.users.Spend(1, 100); err != nil || !ok {
+		t.Fatalf("drain credits: ok=%v err=%v", ok, err)
+	}
+	if got, _ := env.users.Credits(1); got != 0 {
+		t.Fatalf("precondition: balance should be 0, got %d", got)
+	}
+
+	b, _ := env.books.Create(1, "书", "ghibli", "")
+	base := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/characters"
+	upload := env.seedUpload(t, b.ID)
+
+	body := `{"name":"狐狸","type":"character","imageUrl":"` + upload + `"}`
+	rec := env.serveAs(t, httptest.NewRequest(http.MethodPost, base, strings.NewReader(body)), 1)
+	if rec.Code != http.StatusPaymentRequired {
+		t.Fatalf("积分不足应为 402, got %d: %s", rec.Code, rec.Body)
+	}
+	if !strings.Contains(rec.Body.String(), "积分不足") {
+		t.Fatalf("body should carry a friendly credit message, got %s", rec.Body)
+	}
+	if env.editor.calls != 0 {
+		t.Fatalf("image editor must not run when credits are insufficient, ran %d", env.editor.calls)
 	}
 }
 

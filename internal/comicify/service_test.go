@@ -3,6 +3,7 @@ package comicify
 import (
 	"bytes"
 	"context"
+	"errors"
 	"image"
 	"image/color"
 	"image/png"
@@ -40,6 +41,7 @@ func makePNG(t *testing.T, w, h int) []byte {
 // remote URL (pointing at the test image server).
 type fakeEditor struct {
 	remoteURL string
+	err       error
 	gotPrompt string
 	gotRefs   []string
 }
@@ -47,7 +49,33 @@ type fakeEditor struct {
 func (f *fakeEditor) SeedreamImage(_ context.Context, prompt string, refs []string) (string, error) {
 	f.gotPrompt = prompt
 	f.gotRefs = refs
+	if f.err != nil {
+		return "", f.err
+	}
 	return f.remoteURL, nil
+}
+
+// fakeLedger is an in-memory CreditLedger for comicify tests. It records spend
+// and refund counts and enforces the balance so an empty balance is rejected.
+type fakeLedger struct {
+	balance int
+	spends  int
+	refunds int
+}
+
+func (l *fakeLedger) Spend(_ int64, cost int) (bool, error) {
+	l.spends++
+	if l.balance < cost {
+		return false, nil
+	}
+	l.balance -= cost
+	return true, nil
+}
+
+func (l *fakeLedger) Refund(_ int64, amount int) error {
+	l.refunds++
+	l.balance += amount
+	return nil
 }
 
 func newImageServer(t *testing.T) *httptest.Server {
@@ -69,10 +97,11 @@ func TestCharacterComicifies(t *testing.T) {
 	defer imgSrv.Close()
 
 	editor := &fakeEditor{remoteURL: imgSrv.URL + "/x.png"}
-	svc := NewService(editor, store, imgSrv.Client())
+	ledger := &fakeLedger{balance: 100}
+	svc := NewService(editor, ledger, 1, store, imgSrv.Client())
 
 	c := models.Character{Name: "阿黄", Gender: "男孩", Personality: "勇敢"}
-	newURL, err := svc.Character(context.Background(), 3, c, srcURL)
+	newURL, err := svc.Character(context.Background(), 7, 3, c, srcURL)
 	if err != nil {
 		t.Fatalf("Character: %v", err)
 	}
@@ -108,10 +137,11 @@ func TestCharacterDownscalesLargeReference(t *testing.T) {
 	defer imgSrv.Close()
 
 	editor := &fakeEditor{remoteURL: imgSrv.URL + "/x.png"}
-	svc := NewService(editor, store, imgSrv.Client())
+	ledger := &fakeLedger{balance: 100}
+	svc := NewService(editor, ledger, 1, store, imgSrv.Client())
 
 	c := models.Character{Name: "小蓝", Gender: "女孩", Personality: "好奇"}
-	if _, err := svc.Character(context.Background(), 4, c, srcURL); err != nil {
+	if _, err := svc.Character(context.Background(), 7, 4, c, srcURL); err != nil {
 		t.Fatalf("Character: %v", err)
 	}
 	// A large decodable reference is downscaled and re-encoded as JPEG.
@@ -131,10 +161,11 @@ func TestSceneComicifies(t *testing.T) {
 	defer imgSrv.Close()
 
 	editor := &fakeEditor{remoteURL: imgSrv.URL + "/bg.png"}
-	svc := NewService(editor, store, imgSrv.Client())
+	ledger := &fakeLedger{balance: 100}
+	svc := NewService(editor, ledger, 1, store, imgSrv.Client())
 
 	sc := models.Scene{Name: "魔法森林", Description: "夜晚发光的蘑菇"}
-	newURL, err := svc.Scene(context.Background(), 8, sc, srcURL)
+	newURL, err := svc.Scene(context.Background(), 7, 8, sc, srcURL)
 	if err != nil {
 		t.Fatalf("Scene: %v", err)
 	}
@@ -146,5 +177,78 @@ func TestSceneComicifies(t *testing.T) {
 	}
 	if !strings.Contains(editor.gotPrompt, "不要出现任何人物") {
 		t.Fatalf("scene prompt should exclude characters: %s", editor.gotPrompt)
+	}
+}
+
+// TestComicifyChargesOnSuccess verifies a successful comicify deducts one credit
+// and never refunds.
+func TestComicifyChargesOnSuccess(t *testing.T) {
+	store := storage.Local{Root: t.TempDir()}
+	srcURL, err := store.SaveBytes(3, ".png", pngBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	imgSrv := newImageServer(t)
+	defer imgSrv.Close()
+
+	editor := &fakeEditor{remoteURL: imgSrv.URL + "/x.png"}
+	ledger := &fakeLedger{balance: 5}
+	svc := NewService(editor, ledger, 1, store, imgSrv.Client())
+
+	if _, err := svc.Character(context.Background(), 7, 3, models.Character{Name: "阿黄"}, srcURL); err != nil {
+		t.Fatalf("Character: %v", err)
+	}
+	if ledger.spends != 1 || ledger.refunds != 0 || ledger.balance != 4 {
+		t.Fatalf("success should spend once, not refund, balance 4: %+v", ledger)
+	}
+}
+
+// TestComicifyInsufficientCreditsRejects verifies an empty balance returns
+// ErrInsufficientCredits and never calls the image editor.
+func TestComicifyInsufficientCreditsRejects(t *testing.T) {
+	store := storage.Local{Root: t.TempDir()}
+	srcURL, err := store.SaveBytes(3, ".png", pngBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	imgSrv := newImageServer(t)
+	defer imgSrv.Close()
+
+	editor := &fakeEditor{remoteURL: imgSrv.URL + "/x.png"}
+	ledger := &fakeLedger{balance: 0}
+	svc := NewService(editor, ledger, 1, store, imgSrv.Client())
+
+	_, err = svc.Character(context.Background(), 7, 3, models.Character{Name: "阿黄"}, srcURL)
+	if !errors.Is(err, ErrInsufficientCredits) {
+		t.Fatalf("empty balance should return ErrInsufficientCredits, got %v", err)
+	}
+	if editor.gotRefs != nil {
+		t.Fatal("image editor must not be called when credits are insufficient")
+	}
+	if ledger.refunds != 0 {
+		t.Fatalf("a rejected charge must not refund, refunds=%d", ledger.refunds)
+	}
+}
+
+// TestComicifyRefundsOnEditError verifies an image-editor failure refunds the
+// charged credit so the balance is restored.
+func TestComicifyRefundsOnEditError(t *testing.T) {
+	store := storage.Local{Root: t.TempDir()}
+	srcURL, err := store.SaveBytes(3, ".png", pngBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	imgSrv := newImageServer(t)
+	defer imgSrv.Close()
+
+	editor := &fakeEditor{err: errors.New("upstream boom")}
+	ledger := &fakeLedger{balance: 5}
+	svc := NewService(editor, ledger, 1, store, imgSrv.Client())
+
+	if _, err := svc.Character(context.Background(), 7, 3, models.Character{Name: "阿黄"}, srcURL); err == nil {
+		t.Fatal("expected error from editor failure")
+	}
+	if ledger.spends != 1 || ledger.refunds != 1 || ledger.balance != 5 {
+		t.Fatalf("edit failure should spend then refund, balance restored to 5: %+v", ledger)
 	}
 }

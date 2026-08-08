@@ -198,9 +198,9 @@ func (h *Handler) CreateCharacter(w http.ResponseWriter, r *http.Request) {
 			writeAssetError(w, err, "创建角色失败")
 			return
 		}
-		stylized, err := h.comic.Character(r.Context(), bookID, c, c.ImageURL)
+		stylized, err := h.comic.Character(r.Context(), userID, bookID, c, c.ImageURL)
 		if err != nil {
-			writeComicifyError(w)
+			writeComicifyError(w, err)
 			return
 		}
 		c.ImageURL = stylized
@@ -239,9 +239,9 @@ func (h *Handler) UpdateCharacter(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "图片不合法")
 			return
 		}
-		stylized, err := h.comic.Character(r.Context(), existing.BookID, c, c.ImageURL)
+		stylized, err := h.comic.Character(r.Context(), userID, existing.BookID, c, c.ImageURL)
 		if err != nil {
-			writeComicifyError(w)
+			writeComicifyError(w, err)
 			return
 		}
 		c.ImageURL = stylized
@@ -305,9 +305,9 @@ func (h *Handler) CreateScene(w http.ResponseWriter, r *http.Request) {
 			writeAssetError(w, err, "创建场景失败")
 			return
 		}
-		stylized, err := h.comic.Scene(r.Context(), bookID, sc, sc.ImageURL)
+		stylized, err := h.comic.Scene(r.Context(), userID, bookID, sc, sc.ImageURL)
 		if err != nil {
-			writeComicifyError(w)
+			writeComicifyError(w, err)
 			return
 		}
 		sc.ImageURL = stylized
@@ -343,9 +343,9 @@ func (h *Handler) UpdateScene(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "图片不合法")
 			return
 		}
-		stylized, err := h.comic.Scene(r.Context(), existing.BookID, sc, sc.ImageURL)
+		stylized, err := h.comic.Scene(r.Context(), userID, existing.BookID, sc, sc.ImageURL)
 		if err != nil {
-			writeComicifyError(w)
+			writeComicifyError(w, err)
 			return
 		}
 		sc.ImageURL = stylized
@@ -418,9 +418,14 @@ func writeAssetError(w http.ResponseWriter, err error, fallback string) {
 	writeError(w, http.StatusInternalServerError, fallback)
 }
 
-// writeComicifyError responds when the AI comic-ification step fails. It returns
-// 502 with a friendly Chinese message and never leaks upstream/API detail.
-func writeComicifyError(w http.ResponseWriter) {
+// writeComicifyError responds when the AI comic-ification step fails. An
+// insufficient-credit error maps to 402 with a friendly message; any other
+// failure maps to a generic 502 that never leaks upstream/API detail.
+func writeComicifyError(w http.ResponseWriter, err error) {
+	if errors.Is(err, comicify.ErrInsufficientCredits) {
+		writeError(w, http.StatusPaymentRequired, "积分不足，无法漫画化")
+		return
+	}
 	writeError(w, http.StatusBadGateway, "画失败了，再试一次吧")
 }
 
