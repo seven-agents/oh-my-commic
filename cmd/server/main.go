@@ -15,6 +15,7 @@ import (
 	"github.com/seven-agents/oh-my-commic/internal/book"
 	"github.com/seven-agents/oh-my-commic/internal/chapter"
 	"github.com/seven-agents/oh-my-commic/internal/comicify"
+	"github.com/seven-agents/oh-my-commic/internal/community"
 	"github.com/seven-agents/oh-my-commic/internal/config"
 	"github.com/seven-agents/oh-my-commic/internal/db"
 	"github.com/seven-agents/oh-my-commic/internal/httpx"
@@ -111,6 +112,9 @@ func main() {
 	)
 	renderHandler := render.NewHandler(renderSvc)
 
+	communityRepo := community.NewRepo(d)
+	communityHandler := community.NewHandler(community.NewService(communityRepo))
+
 	// Serve the built SPA when a dist directory is present. In dev the frontend
 	// runs under Vite (with a proxy to this server), so a missing dist simply
 	// leaves the backend in API-only mode.
@@ -124,17 +128,18 @@ func main() {
 	}
 
 	router := httpx.NewRouter(httpx.Deps{
-		Session:  sess,
-		UserRepo: userRepo,
-		Auth:     authHandler,
-		Book:     bookHandler,
-		Asset:    assetHandler,
-		Chapter:  chapterHandler,
-		Panel:    panelHandler,
-		Story:    storyHandler,
-		Render:   renderHandler,
-		Media:    media.Handler(),
-		Static:   static,
+		Session:   sess,
+		UserRepo:  userRepo,
+		Auth:      authHandler,
+		Book:      bookHandler,
+		Asset:     assetHandler,
+		Chapter:   chapterHandler,
+		Panel:     panelHandler,
+		Story:     storyHandler,
+		Render:    renderHandler,
+		Community: communityHandler,
+		Media:     media.Handler(),
+		Static:    static,
 	})
 
 	addr := ":" + cfg.Port

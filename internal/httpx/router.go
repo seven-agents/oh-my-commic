@@ -11,6 +11,7 @@ import (
 	"github.com/seven-agents/oh-my-commic/internal/auth"
 	"github.com/seven-agents/oh-my-commic/internal/book"
 	"github.com/seven-agents/oh-my-commic/internal/chapter"
+	"github.com/seven-agents/oh-my-commic/internal/community"
 	"github.com/seven-agents/oh-my-commic/internal/panel"
 	"github.com/seven-agents/oh-my-commic/internal/render"
 	"github.com/seven-agents/oh-my-commic/internal/story"
@@ -45,6 +46,9 @@ type Deps struct {
 	// Render mounts the per-panel AI image render route (behind RequireUser).
 	// Optional: nil disables the render route.
 	Render *render.Handler
+	// Community mounts the public community feed / reader routes (via OptionalUser)
+	// and the authenticated like routes (via RequireUser). Optional: nil disables.
+	Community *community.Handler
 	// Media serves stored assets under /media/*.
 	Media http.Handler
 	// Static serves the built single-page frontend for any non-API, non-media
@@ -86,6 +90,15 @@ func NewRouter(deps Deps) http.Handler {
 		// Public auth routes.
 		deps.Auth.Mount(v1)
 
+		// Public community routes: readable without login, but OptionalUser lets a
+		// logged-in visitor get a personalized "liked" flag and a stable view key.
+		if deps.Community != nil {
+			v1.Group(func(pub chi.Router) {
+				pub.Use(auth.OptionalUser(deps.Session))
+				deps.Community.MountPublic(pub)
+			})
+		}
+
 		// Protected routes: everything in this group requires a valid session.
 		v1.Group(func(pr chi.Router) {
 			pr.Use(auth.RequireUser(deps.Session))
@@ -105,6 +118,9 @@ func NewRouter(deps Deps) http.Handler {
 			}
 			if deps.Render != nil {
 				deps.Render.Mount(pr)
+			}
+			if deps.Community != nil {
+				deps.Community.MountAuthed(pr)
 			}
 		})
 
