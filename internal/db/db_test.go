@@ -309,6 +309,156 @@ func TestMigrateAddsConversationToLegacyChapters(t *testing.T) {
 	}
 }
 
+// TestUsersProfileColumns verifies the user-management profile columns exist on
+// the users table for a fresh DB (created inline by the CREATE TABLE statement).
+func TestUsersProfileColumns(t *testing.T) {
+	d, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	cols := columnSet(t, d, "users")
+	for _, want := range []string{"username", "email", "role", "age", "gender", "avatar_url"} {
+		if !cols[want] {
+			t.Fatalf("users 表缺少列 %q，实际列: %v", want, cols)
+		}
+	}
+}
+
+// TestUsersUniqueIndexes verifies the partial unique indexes on username/email
+// exist for a fresh DB.
+func TestUsersUniqueIndexes(t *testing.T) {
+	d, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	for _, idx := range []string{"idx_users_username", "idx_users_email"} {
+		var name string
+		err := d.QueryRow(
+			"SELECT name FROM sqlite_master WHERE type='index' AND name=?", idx,
+		).Scan(&name)
+		if err != nil {
+			t.Fatalf("唯一索引 %s 不存在: %v", idx, err)
+		}
+	}
+}
+
+// TestSettingsTable verifies the settings key/value table exists for a fresh DB.
+func TestSettingsTable(t *testing.T) {
+	d, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	var name string
+	err = d.QueryRow(
+		"SELECT name FROM sqlite_master WHERE type='table' AND name='settings'",
+	).Scan(&name)
+	if err != nil {
+		t.Fatalf("表 settings 不存在: %v", err)
+	}
+
+	cols := columnSet(t, d, "settings")
+	for _, want := range []string{"key", "value"} {
+		if !cols[want] {
+			t.Fatalf("settings 表缺少列 %q，实际列: %v", want, cols)
+		}
+	}
+}
+
+// TestUsersPartialUniqueIndexAllowsEmpty verifies the partial unique indexes
+// (WHERE col <> '') permit multiple rows with empty username/email while still
+// rejecting duplicate non-empty values.
+func TestUsersPartialUniqueIndexAllowsEmpty(t *testing.T) {
+	d, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	// Two rows with empty username/email must coexist (partial index skips them).
+	if _, err := d.Exec(
+		"INSERT INTO users (nickname, password_hash) VALUES (?, ?)", "n1", "h",
+	); err != nil {
+		t.Fatalf("插入空 username 用户1 失败: %v", err)
+	}
+	if _, err := d.Exec(
+		"INSERT INTO users (nickname, password_hash) VALUES (?, ?)", "n2", "h",
+	); err != nil {
+		t.Fatalf("插入空 username 用户2 失败（partial 唯一索引应放行空值）: %v", err)
+	}
+
+	// A duplicate non-empty username must be rejected.
+	if _, err := d.Exec(
+		"INSERT INTO users (nickname, password_hash, username) VALUES (?, ?, ?)", "n3", "h", "alice",
+	); err != nil {
+		t.Fatalf("插入 username=alice 失败: %v", err)
+	}
+	if _, err := d.Exec(
+		"INSERT INTO users (nickname, password_hash, username) VALUES (?, ?, ?)", "n4", "h", "alice",
+	); err == nil {
+		t.Fatalf("重复 username=alice 应被唯一索引拒绝，但插入成功")
+	}
+}
+
+// TestMigrateAddsProfileColumnsToLegacyUsers proves the idempotent ALTER path
+// for the new users columns and unique indexes: a legacy users table without the
+// columns gains them (and the indexes) after Migrate, and a second Migrate run
+// stays idempotent.
+func TestMigrateAddsProfileColumnsToLegacyUsers(t *testing.T) {
+	d, err := Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer d.Close()
+
+	// Drop child tables (FK-reference users) then users, and recreate a legacy
+	// users table WITHOUT the new columns to simulate an old DB.
+	for _, tbl := range []string{"panels", "chapters", "scenes", "characters", "books", "sessions"} {
+		if _, err := d.Exec(`DROP TABLE ` + tbl); err != nil {
+			t.Fatalf("drop %s: %v", tbl, err)
+		}
+	}
+	if _, err := d.Exec(`DROP TABLE users`); err != nil {
+		t.Fatalf("drop users: %v", err)
+	}
+	if _, err := d.Exec(`CREATE TABLE users (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  nickname TEXT NOT NULL,
+  password_hash TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`); err != nil {
+		t.Fatalf("create legacy users: %v", err)
+	}
+
+	if err := Migrate(d); err != nil {
+		t.Fatalf("migrate legacy DB: %v", err)
+	}
+	cols := columnSet(t, d, "users")
+	for _, want := range []string{"username", "email", "role", "age", "gender", "avatar_url"} {
+		if !cols[want] {
+			t.Fatalf("迁移后 users 表仍缺列 %q，实际列: %v", want, cols)
+		}
+	}
+	for _, idx := range []string{"idx_users_username", "idx_users_email"} {
+		var name string
+		if err := d.QueryRow(
+			"SELECT name FROM sqlite_master WHERE type='index' AND name=?", idx,
+		).Scan(&name); err != nil {
+			t.Fatalf("迁移后唯一索引 %s 仍不存在: %v", idx, err)
+		}
+	}
+
+	// A repeat Migrate must tolerate the now-duplicate columns and indexes.
+	if err := Migrate(d); err != nil {
+		t.Fatalf("重复迁移应幂等，got: %v", err)
+	}
+}
+
 // panelColumnSet returns the set of column names on the panels table.
 func panelColumnSet(t *testing.T, d *sql.DB) map[string]bool {
 	t.Helper()
