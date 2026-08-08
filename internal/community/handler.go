@@ -57,9 +57,10 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	if userID != 0 {
 		vk = "u:" + strconv.FormatInt(userID, 10)
 	}
+	sort := r.URL.Query().Get("sort")
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
-	list, err := h.svc.ListPublic(vk, limit, offset)
+	list, err := h.svc.ListPublic(vk, sort, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "获取社区列表失败")
 		return

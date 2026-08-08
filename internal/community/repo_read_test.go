@@ -25,7 +25,7 @@ func TestListPublicOrdersAndFiltersPrivate(t *testing.T) {
 	}
 
 	repo := NewRepo(d)
-	list, err := repo.ListPublic("", 20, 0)
+	list, err := repo.ListPublic("", "new", 20, 0)
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -41,6 +41,41 @@ func TestListPublicOrdersAndFiltersPrivate(t *testing.T) {
 	if list[0].Liked {
 		t.Fatalf("anonymous liked must be false")
 	}
+}
+
+func TestListPublicSortHot(t *testing.T) {
+	d, _ := db.Open(":memory:")
+	t.Cleanup(func() { d.Close() })
+	d.Exec(`INSERT INTO users (id, nickname, password_hash) VALUES (1,'小明','h')`)
+	// A 最新发布但 0 赞；B 较早发布但 5 赞。
+	d.Exec(`INSERT INTO books (id,user_id,title,is_public,published_at,like_count) VALUES
+	  (10,1,'A新但冷',1,'2026-08-08 12:00:00',0),
+	  (11,1,'B旧但热',1,'2026-08-08 10:00:00',5)`)
+	repo := NewRepo(d)
+
+	// sort=new：按 published_at 降序 → A(10) 在前。
+	byNew, err := repo.ListPublic("", "new", 20, 0)
+	if err != nil || len(byNew) != 2 || byNew[0].ID != 10 {
+		t.Fatalf("sort=new want [10,11], got %+v err=%v", ids(byNew), err)
+	}
+	// sort=hot：按 like_count 降序 → B(11) 在前。
+	byHot, _ := repo.ListPublic("", "hot", 20, 0)
+	if len(byHot) != 2 || byHot[0].ID != 11 {
+		t.Fatalf("sort=hot want [11,10], got %+v", ids(byHot))
+	}
+	// 未知 sort 回落 new。
+	byBad, _ := repo.ListPublic("", "'; DROP TABLE books;--", 20, 0)
+	if len(byBad) != 2 || byBad[0].ID != 10 {
+		t.Fatalf("unknown sort should fall back to new [10,11], got %+v", ids(byBad))
+	}
+}
+
+func ids(bs []CommunityBook) []int64 {
+	out := make([]int64, len(bs))
+	for i, b := range bs {
+		out[i] = b.ID
+	}
+	return out
 }
 
 func TestGetPublicDetailPrivateIs404(t *testing.T) {

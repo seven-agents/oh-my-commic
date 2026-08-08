@@ -36,9 +36,20 @@ func likeUserID(viewerKey string) int64 {
 	return 0
 }
 
-// ListPublic returns public books newest-published first. viewerKey "u:{id}"
+// orderClause maps a caller-supplied sort key to a FIXED, whitelisted ORDER BY
+// clause. The sort value is NEVER interpolated into SQL: unknown or empty keys
+// fall back to newest-first. Only "hot" (most-liked) diverges.
+func orderClause(sort string) string {
+	if sort == "hot" {
+		return `ORDER BY b.like_count DESC, b.published_at DESC, b.id DESC`
+	}
+	return `ORDER BY b.published_at DESC, b.id DESC`
+}
+
+// ListPublic returns public books. sort selects a whitelisted ORDER BY ("hot" =
+// most-liked; anything else = newest-published first). viewerKey "u:{id}"
 // personalizes the liked flag; "" (anonymous) yields liked=false throughout.
-func (r *Repo) ListPublic(viewerKey string, limit, offset int) ([]CommunityBook, error) {
+func (r *Repo) ListPublic(viewerKey, sort string, limit, offset int) ([]CommunityBook, error) {
 	uid := likeUserID(viewerKey)
 	rows, err := r.db.Query(
 		`SELECT b.id, b.title, b.cover_url, b.summary, b.like_count, b.view_count, b.published_at,
@@ -46,7 +57,7 @@ func (r *Repo) ListPublic(viewerKey string, limit, offset int) ([]CommunityBook,
 		        EXISTS(SELECT 1 FROM book_likes l WHERE l.book_id = b.id AND l.user_id = ?) AS liked
 		   FROM books b JOIN users u ON u.id = b.user_id
 		  WHERE b.is_public = 1
-		  ORDER BY b.published_at DESC, b.id DESC
+		  `+orderClause(sort)+`
 		  LIMIT ? OFFSET ?`,
 		uid, limit, offset,
 	)
