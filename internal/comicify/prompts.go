@@ -8,7 +8,7 @@ import (
 
 // styleBase is the shared Ghibli / Miyazaki storybook art-direction prefix used
 // when redrawing an uploaded reference into the locked stylized asset image.
-const styleBase = "把参考图重绘成宫崎骏吉卜力风格的手绘水彩绘本插画：暖色调、柔和光影、圆润线条、亲子友好、干净简洁的背景。"
+const styleBase = "把参考图重绘成宫崎骏吉卜力风格的手绘水彩绘本插画：暖色调、柔和光影、圆润线条、亲子友好、干净简洁的背景。画面铺满整幅，四周不要任何边框、画框、描边或色条。"
 
 // characterPrompt builds the Chinese instruction to redraw the person/creature
 // in the reference image as a full Ghibli storybook character, weaving in the
