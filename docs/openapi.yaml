@@ -21,6 +21,7 @@ tags:
   - name: chapters
   - name: panels
   - name: story
+  - name: community
 
 paths:
   /api/health:
@@ -961,6 +962,123 @@ paths:
         "504":
           $ref: "#/components/responses/GatewayTimeout"
 
+  /api/v1/community/books:
+    get:
+      tags: [community]
+      summary: 社区公开书列表（feed，按发布时间倒序）
+      description: >
+        返回所有 owner 已发布（is_public=1）的书。公开可读、无需登录；已登录时
+        liked 反映当前用户是否点赞（匿名恒为 false）。仅暴露作者 nickname/avatarUrl。
+      security: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+        - name: offset
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        "200":
+          description: 公开书列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/CommunityBook"
+
+  /api/v1/community/books/{id}:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    get:
+      tags: [community]
+      summary: 社区公开书详情（只读阅读视图，含章节与分镜）
+      description: >
+        返回一本公开书的完整只读内容（书元信息 + 作者 + 计数 + 各章节及其分镜）。
+        公开可读、无需登录。非公开或不存在均返回 404（不泄露存在性）。
+      security: []
+      responses:
+        "200":
+          description: 公开书详情
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CommunityBookDetail"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/community/books/{id}/view:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [community]
+      summary: 记录一次浏览（按 viewer 去重）
+      description: >
+        为一本公开书记录浏览量，登录用户按 user id 去重、匿名按 clientId 去重。
+        公开可调用、无需登录。body 可选。非公开或不存在均返回 404。
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ViewInput"
+      responses:
+        "200":
+          $ref: "#/components/responses/OK"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/community/books/{id}/like:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    post:
+      tags: [community]
+      summary: 点赞一本公开书
+      description: >
+        为一本公开书点赞（幂等）。需登录。非公开或不存在返回 404。
+      responses:
+        "200":
+          description: 点赞后的计数与状态
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LikeResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      tags: [community]
+      summary: 取消点赞
+      description: >
+        取消对一本公开书的点赞（幂等）。需登录。非公开或不存在返回 404。
+      responses:
+        "200":
+          description: 取消点赞后的计数与状态
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LikeResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
 components:
   securitySchemes:
     sessionCookie:
@@ -1385,6 +1503,105 @@ components:
           type: [object, "null"]
           additionalProperties:
             type: string
+
+    Author:
+      type: object
+      additionalProperties: false
+      required: [nickname, avatarUrl]
+      properties:
+        nickname:
+          type: string
+        avatarUrl:
+          type: string
+
+    CommunityBook:
+      type: object
+      additionalProperties: false
+      required: [id, title, coverUrl, summary, author, likeCount, viewCount, liked, publishedAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        title:
+          type: string
+        coverUrl:
+          type: string
+        summary:
+          type: string
+        author:
+          $ref: "#/components/schemas/Author"
+        likeCount:
+          type: integer
+        viewCount:
+          type: integer
+        liked:
+          type: boolean
+        publishedAt:
+          type: string
+
+    ReaderChapter:
+      type: object
+      additionalProperties: false
+      required: [title, summary, order, isCover, panels]
+      properties:
+        title:
+          type: string
+        summary:
+          type: string
+        order:
+          type: integer
+        isCover:
+          type: boolean
+        panels:
+          type: [array, "null"]
+          items:
+            $ref: "#/components/schemas/Panel"
+
+    CommunityBookDetail:
+      type: object
+      additionalProperties: false
+      required: [id, title, coverUrl, summary, style, author, likeCount, viewCount, liked, chapters]
+      properties:
+        id:
+          type: integer
+          format: int64
+        title:
+          type: string
+        coverUrl:
+          type: string
+        summary:
+          type: string
+        style:
+          type: string
+        author:
+          $ref: "#/components/schemas/Author"
+        likeCount:
+          type: integer
+        viewCount:
+          type: integer
+        liked:
+          type: boolean
+        chapters:
+          type: [array, "null"]
+          items:
+            $ref: "#/components/schemas/ReaderChapter"
+
+    LikeResult:
+      type: object
+      additionalProperties: false
+      required: [likeCount, liked]
+      properties:
+        likeCount:
+          type: integer
+        liked:
+          type: boolean
+
+    ViewInput:
+      type: object
+      additionalProperties: false
+      properties:
+        clientId:
+          type: string
 
 security:
   - sessionCookie: []

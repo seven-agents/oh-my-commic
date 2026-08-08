@@ -36,6 +36,7 @@ import (
 	"github.com/seven-agents/oh-my-commic/internal/book"
 	"github.com/seven-agents/oh-my-commic/internal/chapter"
 	"github.com/seven-agents/oh-my-commic/internal/comicify"
+	"github.com/seven-agents/oh-my-commic/internal/community"
 	"github.com/seven-agents/oh-my-commic/internal/db"
 	"github.com/seven-agents/oh-my-commic/internal/httpx"
 	"github.com/seven-agents/oh-my-commic/internal/models"
@@ -132,18 +133,21 @@ func newTestApp(t *testing.T) *testApp {
 	)
 	renderHandler := render.NewHandler(renderSvc)
 
+	communityHandler := community.NewHandler(community.NewService(community.NewRepo(d)))
+
 	router := httpx.NewRouter(httpx.Deps{
-		Session:  sess,
-		UserRepo: userRepo,
-		Auth:     authHandler,
-		Book:     bookHandler,
-		Asset:    assetHandler,
-		Chapter:  chapterHandler,
-		Panel:    panelHandler,
-		Story:    storyHandler,
-		Render:   renderHandler,
-		Media:    media.Handler(),
-		Static:   nil,
+		Session:   sess,
+		UserRepo:  userRepo,
+		Auth:      authHandler,
+		Book:      bookHandler,
+		Asset:     assetHandler,
+		Chapter:   chapterHandler,
+		Panel:     panelHandler,
+		Story:     storyHandler,
+		Render:    renderHandler,
+		Community: communityHandler,
+		Media:     media.Handler(),
+		Static:    nil,
 	})
 
 	srv := httptest.NewServer(router)
@@ -435,6 +439,128 @@ func TestContractEndToEnd(t *testing.T) {
 	}
 	if app.gen.calls != 0 {
 		t.Fatalf("image generator must not be called on 402, calls=%d", app.gen.calls)
+	}
+}
+
+// TestContractCommunity validates the community surface (feed / reader / view /
+// like) plus the visibility publish switch. It seeds a public book entirely
+// through non-AI endpoints (register, create book/chapter/panels, PUT
+// visibility) so no image generator is ever reached, then walks every community
+// endpoint and asserts each response conforms to the contract.
+func TestContractCommunity(t *testing.T) {
+	app := newTestApp(t)
+
+	// Seed an author with a public book: register + login, create a book, add a
+	// chapter and a panel, then publish via PUT /books/{id}/visibility.
+	if code, body := app.call(t, http.MethodPost, "/api/v1/register", "",
+		map[string]any{
+			"username":   "author1",
+			"password":   "pw123456",
+			"email":      "author1@example.com",
+			"inviteCode": testInviteCode,
+			"nickname":   "作者一号",
+		}); code != http.StatusCreated {
+		t.Fatalf("register author: want 201, got %d: %s", code, body)
+	}
+	cookie := app.login(t, "author1", "pw123456")
+
+	code, body := app.call(t, http.MethodPost, "/api/v1/books", cookie,
+		map[string]string{"title": "会飞的猫"})
+	if code != http.StatusCreated {
+		t.Fatalf("create book: want 201, got %d: %s", code, body)
+	}
+	var b models.Book
+	mustJSON(t, body, &b)
+	bookPath := "/api/v1/books/" + itoa(b.ID)
+
+	code, body = app.call(t, http.MethodPost, bookPath+"/chapters", cookie,
+		map[string]string{"title": "第一章"})
+	if code != http.StatusCreated {
+		t.Fatalf("create chapter: want 201, got %d: %s", code, body)
+	}
+	var ch models.Chapter
+	mustJSON(t, body, &ch)
+	chPath := "/api/v1/chapters/" + itoa(ch.ID)
+
+	// Seed at least one panel so the reader view exercises a non-empty panels array.
+	code, body = app.call(t, http.MethodPut, chPath+"/panels", cookie,
+		[]models.Panel{{Content: "猫咪起飞", Caption: "起飞"}})
+	if code != http.StatusOK {
+		t.Fatalf("replace panels: want 200, got %d: %s", code, body)
+	}
+
+	// --- publish: PUT /books/{id}/visibility -> 200 Book (contract-validated) ---
+	code, body = app.call(t, http.MethodPut, bookPath+"/visibility", cookie,
+		map[string]any{"isPublic": true})
+	if code != http.StatusOK {
+		t.Fatalf("publish book: want 200, got %d: %s", code, body)
+	}
+
+	// --- anonymous GET /community/books -> 200 CommunityBook[] ---
+	code, body = app.call(t, http.MethodGet, "/api/v1/community/books", "", nil)
+	if code != http.StatusOK {
+		t.Fatalf("community list: want 200, got %d: %s", code, body)
+	}
+	var feed []community.CommunityBook
+	mustJSON(t, body, &feed)
+	if len(feed) != 1 || feed[0].ID != b.ID {
+		t.Fatalf("community list: want 1 book id=%d, got %+v", b.ID, feed)
+	}
+
+	communityBookPath := "/api/v1/community/books/" + itoa(b.ID)
+
+	// --- anonymous GET /community/books/{id} -> 200 CommunityBookDetail ---
+	code, body = app.call(t, http.MethodGet, communityBookPath, "", nil)
+	if code != http.StatusOK {
+		t.Fatalf("community detail: want 200, got %d: %s", code, body)
+	}
+	var detail community.CommunityBookDetail
+	mustJSON(t, body, &detail)
+	if len(detail.Chapters) != 1 || len(detail.Chapters[0].Panels) != 1 {
+		t.Fatalf("community detail: want 1 chapter with 1 panel, got %+v", detail.Chapters)
+	}
+
+	// --- community detail for a non-public / missing book -> 404 (validated) ---
+	if code, _ = app.call(t, http.MethodGet, "/api/v1/community/books/999999", "", nil); code != http.StatusNotFound {
+		t.Fatalf("community detail missing: want 404, got %d", code)
+	}
+
+	// --- anonymous POST /community/books/{id}/view -> 200 {ok:true} ---
+	if code, _ = app.call(t, http.MethodPost, communityBookPath+"/view", "",
+		map[string]any{"clientId": "anon-abc"}); code != http.StatusOK {
+		t.Fatalf("community view: want 200, got %d", code)
+	}
+
+	// --- POST /community/books/{id}/like without login -> 401 (validated) ---
+	if code, _ = app.call(t, http.MethodPost, communityBookPath+"/like", "", nil); code != http.StatusUnauthorized {
+		t.Fatalf("community like anon: want 401, got %d", code)
+	}
+
+	// --- logged-in POST like -> 200 LikeResult (liked=true) ---
+	code, body = app.call(t, http.MethodPost, communityBookPath+"/like", cookie, nil)
+	if code != http.StatusOK {
+		t.Fatalf("community like: want 200, got %d: %s", code, body)
+	}
+	var liked community.LikeResult
+	mustJSON(t, body, &liked)
+	if !liked.Liked || liked.LikeCount != 1 {
+		t.Fatalf("community like: want liked=true count=1, got %+v", liked)
+	}
+
+	// --- logged-in DELETE like -> 200 LikeResult (liked=false) ---
+	code, body = app.call(t, http.MethodDelete, communityBookPath+"/like", cookie, nil)
+	if code != http.StatusOK {
+		t.Fatalf("community unlike: want 200, got %d: %s", code, body)
+	}
+	var unliked community.LikeResult
+	mustJSON(t, body, &unliked)
+	if unliked.Liked || unliked.LikeCount != 0 {
+		t.Fatalf("community unlike: want liked=false count=0, got %+v", unliked)
+	}
+
+	// The whole community walk must never touch the image generator.
+	if app.gen.calls != 0 {
+		t.Fatalf("community walk must not call generator, calls=%d", app.gen.calls)
 	}
 }
 

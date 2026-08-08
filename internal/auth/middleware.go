@@ -29,7 +29,7 @@ func RequireUser(sess *Session) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			userID, ok := resolveUser(sess, r)
 			if !ok {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				writeUnauthorized(w)
 				return
 			}
 
@@ -79,7 +79,7 @@ func RequireAdmin(sess *Session, repo *UserRepo) func(http.Handler) http.Handler
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			userID, ok := resolveUser(sess, r)
 			if !ok {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				writeUnauthorized(w)
 				return
 			}
 
@@ -93,6 +93,15 @@ func RequireAdmin(sess *Session, repo *UserRepo) func(http.Handler) http.Handler
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// writeUnauthorized responds 401 with the uniform {"error": ...} JSON envelope,
+// matching the contract convention used across the API (an unauthenticated
+// request never gets a text/plain body).
+func writeUnauthorized(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusUnauthorized)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": "未登录"})
 }
 
 // writeForbidden responds 403 with the admin-only JSON error. Encoding a fixed
