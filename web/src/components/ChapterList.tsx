@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, Card, Input, Modal } from './ui'
 import { BookCover } from './BookCover'
@@ -98,6 +98,7 @@ function CoverCard({
 }) {
   const navigate = useNavigate()
   const [creating, setCreating] = useState(false)
+  const creatingRef = useRef(false)
   const [error, setError] = useState('')
 
   if (cover) {
@@ -122,7 +123,8 @@ function CoverCard({
   }
 
   const createCover = async () => {
-    if (creating) return
+    if (creatingRef.current) return
+    creatingRef.current = true
     setCreating(true)
     setError('')
     try {
@@ -132,6 +134,7 @@ function CoverCard({
     } catch (err) {
       setError(errorMessage(err))
     } finally {
+      creatingRef.current = false
       setCreating(false)
     }
   }
@@ -178,12 +181,18 @@ function NewChapterModal({
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
+  // 同步防重入：setSubmitting 是异步 state，快速双击 / 回车长按会在 re-render
+  // 前重复进入并发两次 POST（造成重复章节）。用 ref 立即拦住。
+  const submittingRef = useRef(false)
+
   const onSubmit = async () => {
+    if (submittingRef.current) return
     const trimmed = title.trim()
     if (!trimmed) {
       setError('给这一章起个名字吧～')
       return
     }
+    submittingRef.current = true
     setSubmitting(true)
     setError('')
     try {
@@ -193,6 +202,7 @@ function NewChapterModal({
     } catch (err) {
       setError(errorMessage(err))
     } finally {
+      submittingRef.current = false
       setSubmitting(false)
     }
   }
