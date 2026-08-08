@@ -8,7 +8,7 @@
 - CI → 新建 `.github/workflows/ci.yml`
 - 双提交 → 抽 `web/src/hooks/useSubmitOnce.ts`，套 `Bookshelf.tsx(CreateBookModal)`、`AssetEditor.tsx`；参考已修的 `ChapterList.tsx`(ref 守卫)
 - API 文档 → 更新 `docs/frontend-api.md`（storyboard-chat 只出 content、新增 `/api/panels/{id}/process`、Panel.content、Chapter.conversation/panelCount）
-- 配额保护 → 注册加口令：`internal/auth`（注册校验一个 `SIGNUP_CODE` env）+ 前端注册页加输入
+- 积分保护 → `users` 加 `credits` 列(默认100，迁移 ADD COLUMN)；`internal/auth` 加 `Spend/Refund/Credits`；render+comicify 生图前扣 1 分、失败退还、余额不足 402；新增受保护 `GET /api/me` 返余额；前端 `AppHeader` 显示积分 + 402「积分不足」提示。参数入 `config`（`SIGNUP_CREDITS=100`、`IMAGE_CREDIT_COST=1`）
 - AI 错误分类 → `internal/ai` 返回可辨识的 sentinel（配额/限流/超时）；`story`/`render`/`comicify` handler 映射不同文案
 
 ## 现状评估
@@ -27,7 +27,7 @@
 - [ ] **加 CI**（GitHub Actions）：`go test -race ./...` + `go vet` + `cd web && npm run build`，PR 必过。当前全靠手动，回归风险高。
 - [ ] **扫掉其余"双提交"隐患**：`CreateBookModal`(建书)、`AssetEditor`(存资产) 等仍是 `setState` 异步守卫，同章节那个 bug 一样会建重复数据 → 统一改 `useRef` 同步守卫（可抽 `useSubmitOnce` hook）。
 - [ ] **更新 `docs/frontend-api.md`**：storyboard-chat 现在只出 content、新增 `POST /api/panels/{id}/process`、Panel 加 `content`、Chapter 加 `conversation/panelCount` —— 文档已与代码不符。
-- [ ] **保护线上配额**：部署实例是**公网 + 开放注册**，任何人可注册烧掉付费 API 额度 → 加注册口令/白名单，或不用时 `docker compose down`。
+- [ ] **积分保护配额**：部署实例是公网 + 开放注册，任何人可注册烧掉付费 API 额度 → 给每个用户积分，图像调用(出图 render + 资产漫画化 comicify)前**原子扣 1 分**、生成失败**退还**、余额不足返回 **402** 友好提示；注册默认 **100** 分、用完即止；新增受保护 `GET /api/me` 返当前用户(含 credits)，前端 `AppHeader` 显示余额并在出图/漫画化后刷新。额度/单价入 `config`（`SIGNUP_CREDITS`、`IMAGE_CREDIT_COST`）。
 - [ ] **轮换已暴露的 key**（DashScope + 火山 Ark，对话/`.env` 里都出现过）→ 改后更新服务器 `.env` 重启。
 - [ ] **AI 错误分类友好提示**：区分"配额用完/限流/超时"与通用 502，前端给可读提示（现在全是"AI 服务暂时不可用"）。
 
