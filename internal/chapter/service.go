@@ -18,18 +18,24 @@ type BookOwner interface {
 
 // allowedTransitions defines the chapter status state machine: each key maps to
 // the set of statuses it may advance (or revert) to. A (from, to) pair absent
-// from this map is rejected with ErrInvalidStatus. For example draft → done is
-// not present and is therefore illegal.
+// from this map is rejected with ErrInvalidStatus. Setting a chapter to the
+// status it already has is always allowed (idempotent no-op, handled in
+// SetStatus) and need not appear here.
+//
+// This is a creative, iterative tool: users freely jump between storyboarding
+// (chatting), rendering (drawing panels) and done (saving the book), and back
+// again to revise. The transitions are therefore permissive — the machine only
+// exists to keep the status badge meaningful, not to enforce a rigid pipeline.
 //
 //	draft         → storyboarding
-//	storyboarding → rendering, draft
+//	storyboarding → rendering, draft, done   (保存成书 may skip the rendering marker)
 //	rendering     → done, storyboarding
-//	done          → rendering
+//	done          → rendering, storyboarding (re-open a finished chapter to revise)
 var allowedTransitions = map[string]map[string]bool{
 	"draft":         {"storyboarding": true},
-	"storyboarding": {"rendering": true, "draft": true},
+	"storyboarding": {"rendering": true, "draft": true, "done": true},
 	"rendering":     {"done": true, "storyboarding": true},
-	"done":          {"rendering": true},
+	"done":          {"rendering": true, "storyboarding": true},
 }
 
 // Service implements the chapter use cases on top of a Repo. Every operation
@@ -100,6 +106,10 @@ func (s *Service) SetStatus(userID, chapterID int64, status string) (models.Chap
 	}
 	if err := s.ownBook(userID, c.BookID); err != nil {
 		return models.Chapter{}, err
+	}
+	// Setting the status it already has is an idempotent no-op — never an error.
+	if c.Status == status {
+		return c, nil
 	}
 	if !allowedTransitions[c.Status][status] {
 		return models.Chapter{}, ErrInvalidStatus
