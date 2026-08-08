@@ -6,6 +6,7 @@ import { Button, EmptyState, Input, LoadingClouds, Modal } from '../components/u
 import { api } from '../api/client'
 import type { Book } from '../api/types'
 import { errorMessage } from '../api/errors'
+import { useSubmitOnce } from '../hooks/useSubmitOnce'
 
 export default function Bookshelf() {
   const navigate = useNavigate()
@@ -161,16 +162,14 @@ function CreateBookModal({
   onCreated: (book: Book) => void
 }) {
   const [title, setTitle] = useState('')
-  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
-  const onSubmit = async () => {
+  const { submit, submitting } = useSubmitOnce(async () => {
     const trimmed = title.trim()
     if (!trimmed) {
       setError('先给新书起个名字吧～')
       return
     }
-    setSubmitting(true)
     setError('')
     try {
       const book = await api.post<Book>('/api/books', { title: trimmed, style: 'ghibli' })
@@ -178,10 +177,9 @@ function CreateBookModal({
       onCreated(book)
     } catch (err) {
       setError(errorMessage(err))
-    } finally {
-      setSubmitting(false)
     }
-  }
+  })
+  const onSubmit = submit
 
   return (
     <Modal open={open} onClose={onClose} title="创作一本新书 ✨">
