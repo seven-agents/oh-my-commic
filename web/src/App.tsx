@@ -1,15 +1,15 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router-dom'
 import { RequireAuth } from './auth/RequireAuth'
-import Home from './pages/Home'
+import { AppShell } from './components/shell/AppShell'
 import Login from './pages/Login'
-import Bookshelf from './pages/Bookshelf'
+import CommunityView from './pages/CommunityView'
+import MyBooksView from './pages/MyBooksView'
 import BookWorkspace from './pages/BookWorkspace'
 import AssetEditor from './pages/AssetEditor'
 import ChapterEditor from './pages/ChapterEditor'
 import Reader from './pages/Reader'
 import BookReader from './pages/BookReader'
 import Profile from './pages/Profile'
-import Community from './pages/Community'
 import CommunityReader from './pages/CommunityReader'
 import NotFound from './pages/NotFound'
 import type { ReactNode } from 'react'
@@ -23,20 +23,23 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
 
-      <Route path="/" element={<Home />} />
-      <Route path="/community" element={<Community />} />
+      {/* 应用壳：左栏 + 右侧 Outlet。/、/community、/my 在壳内。 */}
+      <Route element={<AppShell />}>
+        <Route path="/" element={<Navigate to="/community" replace />} />
+        <Route path="/community" element={<CommunityView />} />
+        <Route path="/my" element={<Protected><MyBooksView /></Protected>} />
+      </Route>
+
+      {/* 全屏公开阅读器（不进壳，保持沉浸） */}
       <Route path="/community/books/:id" element={<CommunityReader />} />
-      <Route path="/my" element={<Protected><Bookshelf /></Protected>} />
+
       <Route path="/profile" element={<Protected><Profile /></Protected>} />
       <Route path="/books/:id" element={<Protected><BookWorkspace /></Protected>} />
       <Route path="/books/:id/read" element={<Protected><BookReader /></Protected>} />
-
-      {/* 资产编辑：新建 & 编辑，kind ∈ character|pet|scene，assetId 为 'new' 或数字 id */}
       <Route
         path="/books/:bookId/assets/:kind/:assetId"
         element={<Protected><AssetEditor /></Protected>}
       />
-
       <Route path="/chapters/:id" element={<Protected><ChapterEditor /></Protected>} />
       <Route path="/read/:chapterId" element={<Protected><Reader /></Protected>} />
 
