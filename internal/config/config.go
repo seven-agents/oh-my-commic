@@ -33,6 +33,16 @@ type Config struct {
 	// ImageCreditCost is how many credits a single image call (panel render or
 	// asset comicify) charges up front (env IMAGE_CREDIT_COST, default 1).
 	ImageCreditCost int
+
+	// Admin seed credentials (env ADMIN_USERNAME / ADMIN_PASSWORD / ADMIN_EMAIL):
+	// when all present, an initial admin user is seeded at startup. All optional
+	// and never fatal when unset.
+	AdminUsername string
+	AdminPassword string
+	AdminEmail    string
+	// InviteCode gates self-registration (env INVITE_CODE). Optional; empty means
+	// no invite gate configured. Never fatal when unset.
+	InviteCode string
 }
 
 // defaultSignupCredits is the starting balance granted at registration.
@@ -88,6 +98,11 @@ func Load() (Config, error) {
 
 		SignupCredits:   getInt("SIGNUP_CREDITS", defaultSignupCredits),
 		ImageCreditCost: getInt("IMAGE_CREDIT_COST", defaultImageCreditCost),
+
+		AdminUsername: os.Getenv("ADMIN_USERNAME"),
+		AdminPassword: os.Getenv("ADMIN_PASSWORD"),
+		AdminEmail:    os.Getenv("ADMIN_EMAIL"),
+		InviteCode:    os.Getenv("INVITE_CODE"),
 	}
 	if c.DashScopeKey == "" {
 		return c, errors.New("DASHSCOPE_API_KEY 未设置")
