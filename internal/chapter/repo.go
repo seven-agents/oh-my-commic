@@ -191,6 +191,28 @@ func (r *Repo) SetSummary(id int64, summary string) (models.Chapter, error) {
 	return r.Get(id)
 }
 
+// Delete removes the chapter with id. It returns ErrNotFound if no such chapter
+// exists. Deleting a chapter cascades to its panels via the
+// FOREIGN KEY (chapter_id) ... ON DELETE CASCADE constraint on the panels table.
+// Ownership is the Service's responsibility.
+func (r *Repo) Delete(id int64) error {
+	res, err := r.db.Exec(
+		`DELETE FROM chapters WHERE id = ?`,
+		id,
+	)
+	if err != nil {
+		return fmt.Errorf("delete chapter %d: %w", id, err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete chapter %d: rows affected: %w", id, err)
+	}
+	if affected == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // scanner is satisfied by both *sql.Row and *sql.Rows, letting scanChapter serve
 // single-row and multi-row queries.
 type scanner interface {

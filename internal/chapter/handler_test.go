@@ -158,12 +158,43 @@ func TestHTTPCrossUser404(t *testing.T) {
 		{http.MethodPost, base, titleRequest{Title: "越权"}},
 		{http.MethodGet, "/api/chapters/" + chID, nil},
 		{http.MethodPut, "/api/chapters/" + chID + "/status", statusRequest{Status: "storyboarding"}},
+		{http.MethodDelete, "/api/chapters/" + chID, nil},
 	}
 	for _, tc := range cases {
 		rec := env.do(2, tc.method, tc.path, tc.body)
 		if rec.Code != http.StatusNotFound {
 			t.Fatalf("%s %s cross-user expected 404, got %d", tc.method, tc.path, rec.Code)
 		}
+	}
+}
+
+// TestHTTPDelete covers the delete endpoint: owner delete returns 200 and the
+// chapter is gone (subsequent get is 404), and deleting an unknown chapter is
+// 404.
+func TestHTTPDelete(t *testing.T) {
+	env := newHandlerTestEnv(t)
+	b, err := env.books.Create(1, "书", "ghibli", "")
+	if err != nil {
+		t.Fatalf("create book: %v", err)
+	}
+	base := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/chapters"
+	create := env.do(1, http.MethodPost, base, titleRequest{Title: "章"})
+	var c models.Chapter
+	if err := json.Unmarshal(create.Body.Bytes(), &c); err != nil {
+		t.Fatalf("decode created: %v", err)
+	}
+	chPath := "/api/chapters/" + strconv.FormatInt(c.ID, 10)
+
+	if rec := env.do(1, http.MethodDelete, chPath, nil); rec.Code != http.StatusOK {
+		t.Fatalf("owner delete expected 200, got %d", rec.Code)
+	}
+	// The chapter is gone.
+	if rec := env.do(1, http.MethodGet, chPath, nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("get after delete expected 404, got %d", rec.Code)
+	}
+	// Deleting again (unknown) is 404.
+	if rec := env.do(1, http.MethodDelete, chPath, nil); rec.Code != http.StatusNotFound {
+		t.Fatalf("delete unknown expected 404, got %d", rec.Code)
 	}
 }
 

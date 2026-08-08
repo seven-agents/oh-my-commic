@@ -28,8 +28,9 @@ func NewHandler(svc *Service) *Handler {
 //	GET  /api/books/{bookId}/chapters
 //	POST /api/books/{bookId}/chapters
 //	POST /api/books/{bookId}/cover-chapter
-//	GET  /api/chapters/{id}
-//	PUT  /api/chapters/{id}/status
+//	GET    /api/chapters/{id}
+//	PUT    /api/chapters/{id}/status
+//	DELETE /api/chapters/{id}
 //
 // It deliberately does NOT attach auth.RequireUser: the caller mounts these
 // routes inside a group already wrapped with RequireUser, so every handler can
@@ -40,6 +41,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/api/books/{bookId}/cover-chapter", h.EnsureCover)
 	r.Get("/api/chapters/{id}", h.Get)
 	r.Put("/api/chapters/{id}/status", h.SetStatus)
+	r.Delete("/api/chapters/{id}", h.Delete)
 }
 
 // titleRequest is the body of a create-chapter request.
@@ -135,6 +137,22 @@ func (h *Handler) SetStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, updated)
+}
+
+// Delete handles DELETE /api/chapters/{id}. Deleting a chapter cascades to its
+// panels at the database level. It returns 200 on success and 404 for a
+// cross-user or unknown chapter.
+func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
+	userID := auth.UserID(r.Context())
+	id, ok := parseChapterID(w, r)
+	if !ok {
+		return
+	}
+	if err := h.svc.Delete(userID, id); err != nil {
+		writeChapterError(w, err, "删除章节失败")
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 // parseBookID reads the {bookId} path parameter. On a missing or non-positive id
