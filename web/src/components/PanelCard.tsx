@@ -1,6 +1,8 @@
+import { useState } from 'react'
 import { Button, LoadingClouds } from './ui'
 import { StoryboardPanelCard } from './StoryboardPanelCard'
 import { mediaUrl } from '../api/media'
+import { cnNumeral } from '../api/cnNumeral'
 import type { Panel } from '../api/types'
 import type { AssetIndex } from './chapter/assetLookup'
 
@@ -16,8 +18,9 @@ type PanelCardProps = {
   onRender: () => void
 }
 
-// Stage ② 出图阶段单卡：复用 StoryboardPanelCard 的可编辑输入/输出 + 重新解析，
-// 再在下方加上「图片预览 + 生成这张图」出图脚注，避免重复实现编辑 UI。
+// 出图阶段单卡：默认只显示 头部(第N格+摘要+编辑按钮) + 图片/出图，卡片高度统一、
+// 左右两列对齐；编辑区(复用 StoryboardPanelCard 的可编辑输入/输出+重新解析)默认收起，
+// 点「编辑」按需展开。
 export function PanelCard({
   panel,
   index,
@@ -28,17 +31,37 @@ export function PanelCard({
   onProcess,
   onRender,
 }: PanelCardProps) {
+  const [editing, setEditing] = useState(false)
+  const summary = panel.caption.trim() || (canRender ? '已解析，待出图' : '还没解析')
+
   return (
-    <div className="flex flex-col gap-3">
-      <StoryboardPanelCard
-        panel={panel}
-        index={index}
-        saving={saving}
-        processing={processing}
-        onPatch={onPatch}
-        onProcess={onProcess}
-      />
+    <div className="flex flex-col gap-3 rounded-3xl bg-white/60 p-3 shadow-soft-sm">
+      <div className="flex items-center gap-2">
+        <span className="flex-none rounded-full bg-white px-2.5 py-1 font-display text-xs font-bold text-ink-soft shadow-soft-sm">
+          第{cnNumeral(panel.order + 1)}格
+        </span>
+        <span className="min-w-0 flex-1 truncate text-sm text-ink-soft">{summary}</span>
+        <button
+          type="button"
+          onClick={() => setEditing((v) => !v)}
+          className="flex-none rounded-full bg-cream px-3 py-1 text-xs font-semibold text-ink transition-colors hover:bg-sky/20"
+        >
+          {editing ? '收起 ▲' : '✏️ 编辑'}
+        </button>
+      </div>
+
       <PanelRenderFooter panel={panel} canRender={canRender} onRender={onRender} />
+
+      {editing && (
+        <StoryboardPanelCard
+          panel={panel}
+          index={index}
+          saving={saving}
+          processing={processing}
+          onPatch={onPatch}
+          onProcess={onProcess}
+        />
+      )}
     </div>
   )
 }
