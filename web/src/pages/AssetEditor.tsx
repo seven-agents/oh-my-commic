@@ -6,6 +6,7 @@ import { Button, Card, Input, LoadingClouds, Textarea } from '../components/ui'
 import { api } from '../api/client'
 import type { Character, CharacterType, Scene } from '../api/types'
 import { errorMessage } from '../api/errors'
+import { useAuth } from '../auth/useAuth'
 
 type AssetKind = 'character' | 'pet' | 'scene'
 
@@ -28,6 +29,7 @@ const EMPTY_FORM: FormState = { name: '', gender: '', age: '', personality: '', 
 
 export default function AssetEditor() {
   const navigate = useNavigate()
+  const { refreshUser } = useAuth()
   const { bookId = '', kind = 'character', assetId } = useParams<{
     bookId: string
     kind: AssetKind
@@ -109,6 +111,8 @@ export default function AssetEditor() {
     } catch (err) {
       setError(errorMessage(err))
     } finally {
+      // 新上传的图会漫画化（扣费；失败退还 / 余额不足 402），保存后刷新 header 积分。
+      void refreshUser()
       setSaving(false)
     }
   }

@@ -32,6 +32,14 @@ export function AppHeader({ right }: AppHeaderProps) {
 
       <div className="flex items-center gap-3">
         {right}
+        {user && (
+          <span
+            className="flex items-center gap-1 rounded-full bg-white/70 px-3 py-1.5 font-display text-sm font-bold text-ink-soft shadow-soft-sm"
+            title="图像积分：出图 / 漫画化各扣 1 分，失败退还"
+          >
+            ⭐ 积分 {user.credits}
+          </span>
+        )}
         <div className="relative" ref={menuRef}>
           <button
             type="button"

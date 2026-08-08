@@ -6,6 +6,7 @@ import type { Panel } from '../api/types'
 import { errorMessage } from '../api/errors'
 import { type AssetIndex, resolveActors, resolveScene } from './chapter/assetLookup'
 import { canRenderPanel } from './chapter/panelStage'
+import { useAuth } from '../auth/useAuth'
 
 type PanelGridProps = {
   panels: Panel[]
@@ -30,6 +31,7 @@ function panelBody(panel: Panel) {
 
 // Stage ② 逐格出图：出场概览 + 可编辑输入/输出 + 重新解析 + 逐格/全部生成。
 export function PanelGrid({ panels, index, onPanelsChange, onNext }: PanelGridProps) {
+  const { refreshUser } = useAuth()
   const [error, setError] = useState('')
   const [bulk, setBulk] = useState(false)
   const [savingId, setSavingId] = useState<number | null>(null)
@@ -73,6 +75,7 @@ export function PanelGrid({ panels, index, onPanelsChange, onNext }: PanelGridPr
   }
 
   // 单格出图：立即置 rendering，成功回填、失败标 failed。
+  // 无论成功（扣费）还是失败（退还/拒绝），余额都可能变化，故结束后刷新 header。
   const renderOne = async (panel: Panel) => {
     applyPanel(panel.id, { status: 'rendering' })
     try {
@@ -81,6 +84,8 @@ export function PanelGrid({ panels, index, onPanelsChange, onNext }: PanelGridPr
     } catch (err) {
       setError(errorMessage(err))
       applyPanel(panel.id, { status: 'failed' })
+    } finally {
+      void refreshUser()
     }
   }
 

@@ -4,6 +4,8 @@ export type User = {
   id: number
   nickname: string
   createdAt: string
+  // 图像积分余额（出图 / 漫画化各扣费，失败退还）
+  credits: number
 }
 
 export type Book = {

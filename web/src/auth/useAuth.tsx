@@ -47,6 +47,8 @@ type AuthContextValue = {
   login: (nickname: string, password: string) => Promise<void>
   register: (nickname: string, password: string) => Promise<void>
   logout: () => Promise<void>
+  // 从 /api/me 拉取最新用户（含积分余额）并更新本地态，供出图/漫画化后刷新 header。
+  refreshUser: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -78,6 +80,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     [login],
   )
 
+  // 刷新当前用户（积分等）。静默失败：出图/漫画化本身已成功，余额展示滞后无妨；
+  // 若会话失效返回 401，client 的全局处理会触发登出。
+  const refreshUser = useCallback(async () => {
+    try {
+      const me = await api.getMe()
+      setUser(me)
+      setIsAuthed(true)
+      persist({ authed: true, user: me })
+    } catch {
+      // 忽略刷新失败，保留现有展示
+    }
+  }, [])
+
   const logout = useCallback(async () => {
     try {
       await api.post<void>('/api/logout')
@@ -95,8 +110,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [applyLogout])
 
   const value = useMemo<AuthContextValue>(
-    () => ({ user, isAuthed, login, register, logout }),
-    [user, isAuthed, login, register, logout],
+    () => ({ user, isAuthed, login, register, logout, refreshUser }),
+    [user, isAuthed, login, register, logout, refreshUser],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
