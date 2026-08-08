@@ -135,6 +135,20 @@ func (s *Service) SetStatus(userID, chapterID int64, status string) (models.Chap
 	return s.repo.SetStatus(chapterID, status)
 }
 
+// Delete removes the chapter with chapterID after re-checking that its owning
+// book belongs to userID. Deleting a chapter cascades to its panels at the
+// database level. Cross-user or unknown chapters return ErrNotFound.
+func (s *Service) Delete(userID, chapterID int64) error {
+	c, err := s.repo.Get(chapterID)
+	if err != nil {
+		return err
+	}
+	if err := s.ownBook(userID, c.BookID); err != nil {
+		return err
+	}
+	return s.repo.Delete(chapterID)
+}
+
 // SetSummary overwrites the AI-polished story summary of the chapter with
 // chapterID after re-checking that its owning book belongs to userID. Cross-user
 // or unknown chapters return ErrNotFound.

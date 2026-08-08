@@ -273,6 +273,90 @@ func TestGetSetStatusUnknownChapter(t *testing.T) {
 	}
 }
 
+// TestDeleteOwnerCascadesPanels verifies the owner can delete a chapter, that it
+// disappears from ListByBook, and that its panels are cascade-deleted by the
+// FOREIGN KEY (chapter_id) ... ON DELETE CASCADE constraint on the panels table.
+func TestDeleteOwnerCascadesPanels(t *testing.T) {
+	svc, books := newTestService(t)
+	b, err := books.Create(1, "书", "ghibli", "")
+	if err != nil {
+		t.Fatalf("create book: %v", err)
+	}
+	keep, err := svc.CreateChapter(1, b.ID, "留下的一章")
+	if err != nil {
+		t.Fatalf("create keep chapter: %v", err)
+	}
+	victim, err := svc.CreateChapter(1, b.ID, "要删的一章")
+	if err != nil {
+		t.Fatalf("create victim chapter: %v", err)
+	}
+
+	// Seed a panel under the chapter to prove the cascade fires.
+	if _, err := svc.repo.db.Exec(
+		`INSERT INTO panels (chapter_id, "order", caption) VALUES (?, 1, '分镜')`,
+		victim.ID,
+	); err != nil {
+		t.Fatalf("seed panel: %v", err)
+	}
+
+	if err := svc.Delete(1, victim.ID); err != nil {
+		t.Fatalf("owner delete: %v", err)
+	}
+
+	// The victim chapter is gone from the book's list; the other survives.
+	list, err := svc.ListChapters(1, b.ID)
+	if err != nil {
+		t.Fatalf("list chapters: %v", err)
+	}
+	if len(list) != 1 || list[0].ID != keep.ID {
+		t.Fatalf("删除后应仅剩留下的一章, got %+v", list)
+	}
+
+	// Its panels are cascade-deleted.
+	var panels int
+	if err := svc.repo.db.QueryRow(
+		`SELECT COUNT(*) FROM panels WHERE chapter_id = ?`, victim.ID,
+	).Scan(&panels); err != nil {
+		t.Fatalf("count panels: %v", err)
+	}
+	if panels != 0 {
+		t.Fatalf("章节删除后其分镜应级联删除, still %d panels", panels)
+	}
+
+	// Deleting an already-deleted (unknown) chapter returns ErrNotFound.
+	if err := svc.Delete(1, victim.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("重复删除应返回 ErrNotFound, got %v", err)
+	}
+}
+
+// TestDeleteCrossUserAndUnknown verifies that user 2 cannot delete user 1's
+// chapter (ErrNotFound, chapter untouched) and that deleting an unknown id
+// returns ErrNotFound.
+func TestDeleteCrossUserAndUnknown(t *testing.T) {
+	svc, books := newTestService(t)
+	b, err := books.Create(1, "书", "ghibli", "")
+	if err != nil {
+		t.Fatalf("create book: %v", err)
+	}
+	c, err := svc.CreateChapter(1, b.ID, "章")
+	if err != nil {
+		t.Fatalf("create chapter: %v", err)
+	}
+
+	// Cross-user delete is rejected and must not remove the chapter.
+	if err := svc.Delete(2, c.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("跨用户删除应返回 ErrNotFound, got %v", err)
+	}
+	if _, err := svc.GetChapter(1, c.ID); err != nil {
+		t.Fatalf("跨用户删除后章节仍应存在, got %v", err)
+	}
+
+	// Unknown id is ErrNotFound.
+	if err := svc.Delete(1, 999); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("未知章节删除应返回 ErrNotFound, got %v", err)
+	}
+}
+
 // TestSetSummaryOwnershipAndRoundTrip verifies the owner can set a chapter's
 // summary, that a cross-user attempt returns ErrNotFound without mutating the
 // stored summary, and that the value round-trips through Get and ListChapters.

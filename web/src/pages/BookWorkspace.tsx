@@ -107,6 +107,9 @@ export default function BookWorkspace() {
                     prev.some((c) => c.id === ch.id) ? prev : [...prev, ch],
                   )
                 }
+                onDeleted={(chapterId) =>
+                  setChapters((prev) => prev.filter((c) => c.id !== chapterId))
+                }
               />
             </div>
           </>

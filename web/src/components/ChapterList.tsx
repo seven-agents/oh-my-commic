@@ -11,6 +11,7 @@ type ChapterListProps = {
   book: Book
   chapters: Chapter[]
   onCreated: (chapter: Chapter) => void
+  onDeleted: (chapterId: number) => void
 }
 
 const STATUS_META: Record<ChapterStatus, { label: string; className: string }> = {
@@ -20,10 +21,11 @@ const STATUS_META: Record<ChapterStatus, { label: string; className: string }> =
   done: { label: '完成', className: 'bg-meadow/30 text-meadow-deep' },
 }
 
-export function ChapterList({ book, chapters, onCreated }: ChapterListProps) {
+export function ChapterList({ book, chapters, onCreated, onDeleted }: ChapterListProps) {
   const navigate = useNavigate()
   const bookId = String(book.id)
   const [open, setOpen] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<Chapter | null>(null)
 
   const cover = chapters.find((c) => c.isCover)
   const regularChapters = chapters
@@ -50,11 +52,11 @@ export function ChapterList({ book, chapters, onCreated }: ChapterListProps) {
           {regularChapters.map((ch) => {
             const meta = STATUS_META[ch.status]
             return (
-              <li key={ch.id}>
+              <li key={ch.id} className="group relative">
                 <button
                   type="button"
                   onClick={() => navigate(`/chapters/${ch.id}`)}
-                  className="flex w-full items-center gap-3 rounded-3xl bg-cream/60 px-5 py-4 text-left transition-all hover:-translate-y-0.5 hover:bg-white hover:shadow-soft-sm"
+                  className="flex w-full items-center gap-3 rounded-3xl bg-cream/60 px-5 py-4 pr-12 text-left transition-all hover:-translate-y-0.5 hover:bg-white hover:shadow-soft-sm"
                 >
                   <span className="flex h-9 w-9 flex-none items-center justify-center rounded-full bg-white font-display text-xs font-bold text-ink-soft shadow-soft-sm">
                     第{cnNumeral(ch.order)}章
@@ -65,6 +67,17 @@ export function ChapterList({ book, chapters, onCreated }: ChapterListProps) {
                   <span className={`flex-none rounded-full px-3 py-1 text-xs font-bold ${meta.className}`}>
                     {meta.label}
                   </span>
+                </button>
+                <button
+                  type="button"
+                  aria-label={`删除${ch.title}`}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    setPendingDelete(ch)
+                  }}
+                  className="absolute right-3 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-sm text-coral shadow-soft-sm transition-all hover:bg-coral hover:text-white focus:opacity-100 group-hover:opacity-100 sm:opacity-0"
+                >
+                  <span aria-hidden>✕</span>
                 </button>
               </li>
             )
@@ -82,7 +95,85 @@ export function ChapterList({ book, chapters, onCreated }: ChapterListProps) {
           navigate(`/chapters/${ch.id}`)
         }}
       />
+
+      <DeleteChapterModal
+        chapter={pendingDelete}
+        onClose={() => setPendingDelete(null)}
+        onDeleted={(id) => {
+          setPendingDelete(null)
+          onDeleted(id)
+        }}
+      />
     </Card>
+  )
+}
+
+function DeleteChapterModal({
+  chapter,
+  onClose,
+  onDeleted,
+}: {
+  chapter: Chapter | null
+  onClose: () => void
+  onDeleted: (chapterId: number) => void
+}) {
+  const [deleting, setDeleting] = useState(false)
+  const [error, setError] = useState('')
+
+  // 同步防重入：setDeleting 是异步 state，快速双击会在 re-render 前并发两次
+  // DELETE。用 ref 立即拦住。
+  const deletingRef = useRef(false)
+
+  const close = () => {
+    if (deletingRef.current) return
+    setError('')
+    onClose()
+  }
+
+  const onConfirm = async () => {
+    if (!chapter || deletingRef.current) return
+    deletingRef.current = true
+    setDeleting(true)
+    setError('')
+    try {
+      await api.del(`/api/chapters/${chapter.id}`)
+      onDeleted(chapter.id)
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      deletingRef.current = false
+      setDeleting(false)
+    }
+  }
+
+  return (
+    <Modal open={chapter !== null} onClose={close} title="删掉这一章吗？">
+      {chapter && (
+        <div className="flex flex-col gap-5">
+          <p className="text-ink-soft">
+            确定删掉「<span className="font-bold text-ink">{chapter.title}</span>
+            」这一章吗？这一章里画好的分镜也会一起删掉哦，删了就找不回来啦。
+          </p>
+          {error && (
+            <p className="rounded-2xl bg-coral/10 px-4 py-3 text-center text-sm font-semibold text-coral">
+              {error}
+            </p>
+          )}
+          <div className="flex justify-end gap-3">
+            <Button variant="ghost" onClick={close} disabled={deleting}>
+              取消
+            </Button>
+            <Button
+              onClick={onConfirm}
+              loading={deleting}
+              className="bg-coral text-white hover:bg-coral"
+            >
+              删除
+            </Button>
+          </div>
+        </div>
+      )}
+    </Modal>
   )
 }
 
