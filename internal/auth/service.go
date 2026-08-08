@@ -19,12 +19,6 @@ var (
 	// the password does not match. It deliberately does not distinguish between
 	// the two so callers cannot probe which usernames exist.
 	ErrInvalidCredentials = errors.New("invalid credentials")
-	// ErrNicknameTaken is a backwards-compatible alias of ErrUsernameTaken. Login
-	// now keys on username (not the display nickname), so registration uniqueness
-	// is surfaced via ErrUsernameTaken. This alias is retained so pre-Task-8
-	// handler code that still matches ErrNicknameTaken keeps compiling; new code
-	// should use ErrUsernameTaken / ErrEmailTaken.
-	ErrNicknameTaken = ErrUsernameTaken
 )
 
 // Service implements the registration, login, profile and admin/invite seeding
@@ -47,6 +41,11 @@ func NewService(repo *UserRepo, invites *InviteRepo, sess *Session, signupCredit
 // Sessions exposes the underlying session store so HTTP handlers can resolve
 // tokens issued by Login/Register.
 func (s *Service) Sessions() *Session { return s.sess }
+
+// Repo exposes the underlying user repository so the router can wire the
+// RequireAdmin middleware (which needs to load a user's role) without the caller
+// having to thread the repository separately alongside the Service.
+func (s *Service) Repo() *UserRepo { return s.repo }
 
 // RegisterInput carries the fields accepted by Register. Email and Nickname are
 // validated/normalized; an empty Nickname falls back to the username.

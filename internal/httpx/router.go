@@ -23,6 +23,9 @@ import (
 type Deps struct {
 	// Session backs the RequireUser middleware protecting book routes.
 	Session *auth.Session
+	// UserRepo backs the RequireAdmin middleware (which loads a user's role) for
+	// the admin-only invite-code routes.
+	UserRepo *auth.UserRepo
 	// Auth mounts the public authentication routes.
 	Auth *auth.Handler
 	// Book mounts the per-user book routes (behind RequireUser).
@@ -62,6 +65,7 @@ type Deps struct {
 //   - GET /api/health                                   public (unversioned probe)
 //   - /api/v1/register, /api/v1/login, /api/v1/logout   public (auth)
 //   - /api/v1/me, /api/v1/books*, ...                   protected by RequireUser
+//   - /api/v1/admin/invite-code*                        protected by RequireAdmin
 //   - /media/*                                          static asset serving
 func NewRouter(deps Deps) http.Handler {
 	r := chi.NewRouter()
@@ -103,6 +107,15 @@ func NewRouter(deps Deps) http.Handler {
 				deps.Render.Mount(pr)
 			}
 		})
+
+		// Admin routes: a separate group gated by RequireAdmin so only users with
+		// the "admin" role can read or rotate the global invite code.
+		if deps.UserRepo != nil {
+			v1.Group(func(ar chi.Router) {
+				ar.Use(auth.RequireAdmin(deps.Session, deps.UserRepo))
+				deps.Auth.MountAdmin(ar)
+			})
+		}
 	})
 
 	if deps.Media != nil {
