@@ -301,6 +301,11 @@ func TestRenderPanelHappyPath(t *testing.T) {
 	if !strings.Contains(prompt, stylePrefix) {
 		t.Fatalf("prompt missing style prefix: %q", prompt)
 	}
+	// The no-text constraint must be present so the model doesn't stamp garbled
+	// letters/watermarks into the image.
+	if !strings.Contains(prompt, "不要出现任何文字") {
+		t.Fatalf("prompt missing no-text constraint: %q", prompt)
+	}
 	if !strings.Contains(prompt, "小龙在森林里奔跑") {
 		t.Fatalf("prompt missing caption: %q", prompt)
 	}

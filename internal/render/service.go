@@ -36,8 +36,9 @@ var ErrNotFound = errors.New("not found")
 
 // stylePrefix is the fixed Ghibli / Miyazaki storybook art-direction prefix
 // prepended to every generated prompt. Kept as a constant so the visual style
-// stays consistent across every panel of every book.
-const stylePrefix = "吉卜力/宫崎骏风格：手绘水彩、暖色调、柔和光影、圆润造型、亲子友好绘本风。"
+// stays consistent across every panel of every book. The no-text constraint
+// keeps the image model from stamping garbled letters/watermarks into the art.
+const stylePrefix = "吉卜力/宫崎骏风格：手绘水彩、暖色调、柔和光影、圆润造型、亲子友好绘本风。画面中不要出现任何文字、字母、数字或水印。"
 
 // maxDownloadBytes caps how many bytes we read from the remote image to bound
 // memory and guard against a hostile or misbehaving upstream (~15MB).
