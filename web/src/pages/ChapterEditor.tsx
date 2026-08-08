@@ -43,7 +43,8 @@ export default function ChapterEditor() {
 
   const onSaved = (ch: Chapter) => {
     setChapter(ch)
-    navigate(`/read/${chapterId}`)
+    // 封面保存后回到书房工作台；普通章节进入阅读器。
+    navigate(ch.isCover ? `/books/${ch.bookId}` : `/read/${chapterId}`)
   }
 
   return (
@@ -77,7 +78,9 @@ export default function ChapterEditor() {
         ) : (
           <>
             <header className="mb-6 text-center">
-              <h1 className="font-display text-3xl font-extrabold text-ink">{chapter.title}</h1>
+              <h1 className="font-display text-3xl font-extrabold text-ink">
+                {chapter.isCover ? '制作封面 🎨' : chapter.title}
+              </h1>
             </header>
 
             <Stepper current={stage} maxReached={maxReached} onGo={setStage} />
@@ -89,6 +92,7 @@ export default function ChapterEditor() {
                 index={index}
                 onPanelsChange={replacePanels}
                 onConfirm={confirmStoryboard}
+                coverMode={chapter.isCover}
               />
             )}
             {stage === 2 && (
@@ -102,9 +106,10 @@ export default function ChapterEditor() {
             {stage === 3 && (
               <ComicCompose
                 chapterId={chapterId}
-                title={chapter.title}
+                title={chapter.isCover ? '封面' : chapter.title}
                 panels={panels}
                 onSaved={onSaved}
+                coverMode={chapter.isCover}
               />
             )}
           </>

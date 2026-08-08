@@ -11,10 +11,18 @@ type ComicComposeProps = {
   title: string
   panels: Panel[]
   onSaved: (chapter: Chapter) => void
+  // 封面模式：文案改为「保存封面」（cover_url 已在渲染时同步）。
+  coverMode?: boolean
 }
 
 // Stage ③ 拼成书：预览整页漫画 + 保存成书。
-export function ComicCompose({ chapterId, title, panels, onSaved }: ComicComposeProps) {
+export function ComicCompose({
+  chapterId,
+  title,
+  panels,
+  onSaved,
+  coverMode = false,
+}: ComicComposeProps) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -46,13 +54,15 @@ export function ComicCompose({ chapterId, title, panels, onSaved }: ComicCompose
 
       <div className="flex flex-wrap items-center justify-center gap-3">
         <Button onClick={save} loading={saving} className="text-base">
-          📖 保存成书
+          {coverMode ? '🎨 保存封面' : '📖 保存成书'}
         </Button>
-        <Link to={`/read/${chapterId}`}>
-          <Button variant="ghost" className="text-base">
-            去阅读
-          </Button>
-        </Link>
+        {!coverMode && (
+          <Link to={`/read/${chapterId}`}>
+            <Button variant="ghost" className="text-base">
+              去阅读
+            </Button>
+          </Link>
+        )}
       </div>
     </div>
   )

@@ -73,6 +73,24 @@ func (s *Service) CreateChapter(userID, bookID int64, title string) (models.Chap
 	return s.repo.Create(bookID, title)
 }
 
+// EnsureCover returns the book's single cover chapter, creating it if absent,
+// after verifying userID owns the book. A book has at most one cover chapter, so
+// a repeat call returns the same chapter. Cross-user or unknown books return
+// ErrNotFound.
+func (s *Service) EnsureCover(userID, bookID int64) (models.Chapter, error) {
+	if err := s.ownBook(userID, bookID); err != nil {
+		return models.Chapter{}, err
+	}
+	existing, err := s.repo.FindCover(bookID)
+	if err == nil {
+		return existing, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return models.Chapter{}, err
+	}
+	return s.repo.CreateCover(bookID)
+}
+
 // ListChapters returns all chapters under bookID after verifying userID owns the
 // book. Cross-user or unknown books return ErrNotFound.
 func (s *Service) ListChapters(userID, bookID int64) ([]models.Chapter, error) {

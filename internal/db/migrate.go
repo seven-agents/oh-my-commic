@@ -55,6 +55,7 @@ var schemaStatements = []string{
   title TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'draft',
   summary TEXT NOT NULL DEFAULT '',
+  is_cover INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
 )`,
@@ -90,6 +91,7 @@ var alterStatements = []string{
 	`ALTER TABLE panels ADD COLUMN event TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE panels ADD COLUMN char_expressions TEXT NOT NULL DEFAULT '{}'`,
 	`ALTER TABLE chapters ADD COLUMN summary TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE chapters ADD COLUMN is_cover INTEGER NOT NULL DEFAULT 0`,
 }
 
 // Migrate creates all application tables if they do not already exist, then

@@ -84,7 +84,7 @@ func main() {
 	// The render flow downloads the generated image from a remote URL; give it a
 	// generous timeout independent of the AI client's request timeout.
 	renderSvc := render.NewService(
-		aiClient, panelSvc, chapterSvc, assetSvc, media,
+		aiClient, panelSvc, chapterSvc, assetSvc, bookRepo, media,
 		&http.Client{Timeout: 120 * time.Second},
 		cfg.RenderMaxRefs,
 	)

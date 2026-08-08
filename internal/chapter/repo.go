@@ -29,7 +29,10 @@ const statusDraft = "draft"
 // chapterColumns is the ordered column list used by every chapter SELECT so the
 // scan order stays in sync with scanChapter. "order" is a SQL reserved word and
 // is always quoted.
-const chapterColumns = `id, book_id, "order", title, status, summary, created_at`
+const chapterColumns = `id, book_id, "order", title, status, summary, is_cover, created_at`
+
+// coverTitle is the fixed title assigned to a book's cover chapter.
+const coverTitle = "封面"
 
 // Repo performs pure data operations on the chapters table. It is keyed by
 // book_id / id and does NOT enforce ownership; that is the Service's
@@ -51,8 +54,8 @@ func (r *Repo) Create(bookID int64, title string) (models.Chapter, error) {
 	// COALESCE(MAX("order"), 0) + 1 yields 1 for an empty book and max+1
 	// otherwise, computed atomically within the INSERT.
 	res, err := r.db.Exec(
-		`INSERT INTO chapters (book_id, "order", title, status)
-		 VALUES (?, (SELECT COALESCE(MAX("order"), 0) + 1 FROM chapters WHERE book_id = ?), ?, ?)`,
+		`INSERT INTO chapters (book_id, "order", title, status, is_cover)
+		 VALUES (?, (SELECT COALESCE(MAX("order"), 0) + 1 FROM chapters WHERE book_id = ?), ?, ?, 0)`,
 		bookID, bookID, title, statusDraft,
 	)
 	if err != nil {
@@ -62,6 +65,44 @@ func (r *Repo) Create(bookID int64, title string) (models.Chapter, error) {
 	id, err := res.LastInsertId()
 	if err != nil {
 		return models.Chapter{}, fmt.Errorf("create chapter for book %d: last insert id: %w", bookID, err)
+	}
+	return r.Get(id)
+}
+
+// FindCover returns the book's cover chapter (is_cover=1), or ErrNotFound if the
+// book has none. A book has at most one cover chapter; LIMIT 1 guards against any
+// stray duplicate.
+func (r *Repo) FindCover(bookID int64) (models.Chapter, error) {
+	row := r.db.QueryRow(
+		`SELECT `+chapterColumns+` FROM chapters WHERE book_id = ? AND is_cover = 1 LIMIT 1`,
+		bookID,
+	)
+	c, err := scanChapter(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.Chapter{}, ErrNotFound
+	}
+	if err != nil {
+		return models.Chapter{}, fmt.Errorf("find cover for book %d: %w", bookID, err)
+	}
+	return c, nil
+}
+
+// CreateCover inserts the book's special cover chapter: order 0, is_cover=1,
+// title "封面", status "draft". The persisted row is read back and returned.
+// Callers must ensure the book does not already have a cover chapter (see
+// Service.EnsureCover); this method does not itself enforce single-cover.
+func (r *Repo) CreateCover(bookID int64) (models.Chapter, error) {
+	res, err := r.db.Exec(
+		`INSERT INTO chapters (book_id, "order", title, status, is_cover)
+		 VALUES (?, 0, ?, ?, 1)`,
+		bookID, coverTitle, statusDraft,
+	)
+	if err != nil {
+		return models.Chapter{}, fmt.Errorf("create cover chapter for book %d: %w", bookID, err)
+	}
+	id, err := res.LastInsertId()
+	if err != nil {
+		return models.Chapter{}, fmt.Errorf("create cover chapter for book %d: last insert id: %w", bookID, err)
 	}
 	return r.Get(id)
 }
@@ -160,7 +201,7 @@ type scanner interface {
 func scanChapter(s scanner) (models.Chapter, error) {
 	var c models.Chapter
 	if err := s.Scan(
-		&c.ID, &c.BookID, &c.Order, &c.Title, &c.Status, &c.Summary, &c.CreatedAt,
+		&c.ID, &c.BookID, &c.Order, &c.Title, &c.Status, &c.Summary, &c.IsCover, &c.CreatedAt,
 	); err != nil {
 		return models.Chapter{}, err
 	}

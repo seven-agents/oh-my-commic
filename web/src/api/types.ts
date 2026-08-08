@@ -49,6 +49,7 @@ export type Chapter = {
   title: string
   status: ChapterStatus
   summary: string
+  isCover: boolean
   createdAt: string
 }
 
