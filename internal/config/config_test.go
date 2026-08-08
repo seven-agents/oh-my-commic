@@ -82,6 +82,54 @@ func TestLoadOverridesAndDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadCreditDefaults(t *testing.T) {
+	setKeys(t)
+	os.Unsetenv("SIGNUP_CREDITS")
+	os.Unsetenv("IMAGE_CREDIT_COST")
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.SignupCredits != 100 {
+		t.Fatalf("default SignupCredits should be 100, got %d", c.SignupCredits)
+	}
+	if c.ImageCreditCost != 1 {
+		t.Fatalf("default ImageCreditCost should be 1, got %d", c.ImageCreditCost)
+	}
+}
+
+func TestLoadCreditOverrides(t *testing.T) {
+	setKeys(t)
+	os.Setenv("SIGNUP_CREDITS", "250")
+	os.Setenv("IMAGE_CREDIT_COST", "3")
+	defer os.Unsetenv("SIGNUP_CREDITS")
+	defer os.Unsetenv("IMAGE_CREDIT_COST")
+
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.SignupCredits != 250 {
+		t.Fatalf("SIGNUP_CREDITS override not applied: %d", c.SignupCredits)
+	}
+	if c.ImageCreditCost != 3 {
+		t.Fatalf("IMAGE_CREDIT_COST override not applied: %d", c.ImageCreditCost)
+	}
+
+	// Invalid / non-positive values fall back to the defaults (never fatal).
+	for _, bad := range []string{"abc", "0", "-5"} {
+		os.Setenv("SIGNUP_CREDITS", bad)
+		os.Setenv("IMAGE_CREDIT_COST", bad)
+		c, err := Load()
+		if err != nil {
+			t.Fatalf("bad credit env %q must not fail Load: %v", bad, err)
+		}
+		if c.SignupCredits != 100 || c.ImageCreditCost != 1 {
+			t.Fatalf("bad credit env %q should fall back to defaults, got signup=%d cost=%d", bad, c.SignupCredits, c.ImageCreditCost)
+		}
+	}
+}
+
 func TestLoadRenderMaxRefs(t *testing.T) {
 	setKeys(t)
 	defer os.Unsetenv("RENDER_MAX_REFS")

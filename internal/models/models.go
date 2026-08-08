@@ -5,11 +5,14 @@
 package models
 
 // User is an application account. PasswordHash is never serialized to JSON.
+// Credits is the user's remaining image-generation balance (panel render + asset
+// comicify each cost some credits, charged up front and refunded on failure).
 type User struct {
 	ID           int64  `json:"id"`
 	Nickname     string `json:"nickname"`
 	PasswordHash string `json:"-"`
 	CreatedAt    string `json:"createdAt"`
+	Credits      int    `json:"credits"`
 }
 
 // Book is a comic book owned by a User.
