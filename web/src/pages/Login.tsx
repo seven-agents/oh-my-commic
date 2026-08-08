@@ -50,7 +50,15 @@ export default function Login() {
       if (tab === 'login') {
         await login(nickname.trim(), password)
       } else {
-        await register(nickname.trim(), password)
+        // TODO(用户管理): 注册表单尚待补齐 username/email/邀请码字段（后续任务）。
+        // 暂以昵称兼作用户名，邮箱/邀请码留空，保证类型契约与编译通过。
+        await register({
+          username: nickname.trim(),
+          password,
+          email: '',
+          inviteCode: '',
+          nickname: nickname.trim(),
+        })
       }
       navigate('/', { replace: true })
     } catch (err) {

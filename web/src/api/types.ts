@@ -1,11 +1,22 @@
 // API 数据结构，来自 docs/frontend-api.md
 
+export type UserRole = 'admin' | 'user'
+
 export type User = {
   id: number
+  username: string
+  email: string
+  // 权限角色：admin 可管理邀请码，user 为普通用户
+  role: UserRole
+  // 展示名（问候语等 UI 处使用）
   nickname: string
-  createdAt: string
+  age: number
+  gender: string
+  // 头像图片地址（/media/... 或空串）
+  avatarUrl: string
   // 图像积分余额（出图 / 漫画化各扣费，失败退还）
   credits: number
+  createdAt: string
 }
 
 export type Book = {

@@ -87,6 +87,35 @@ export const api = {
   // 拉取当前登录用户（含最新积分余额），用于登录后 / 出图 / 漫画化后刷新 header。
   getMe: () => request<User>('GET', '/api/v1/me'),
 
+  // 邀请码注册：成功后后端已 set session cookie（自动登录）并返回新用户。
+  register: (body: {
+    username: string
+    password: string
+    email: string
+    inviteCode: string
+    nickname?: string
+  }) => request<User>('POST', '/api/v1/register', body),
+
+  // 用户名 + 密码登录：成功后 set session cookie 并返回当前用户。
+  login: (body: { username: string; password: string }) =>
+    request<User>('POST', '/api/v1/login', body),
+
+  // 更新当前用户可编辑资料（昵称/年龄/性别），返回更新后的用户。
+  updateProfile: (body: { nickname: string; age: number; gender: string }) =>
+    request<User>('PUT', '/api/v1/me/profile', body),
+
+  // 上传头像（复用 multipart 方式，字段名 file），返回含 avatarUrl 的用户。
+  uploadAvatar: (file: File) =>
+    api.upload<User>('/api/v1/me/avatar', file),
+
+  // 读取当前全局邀请码（仅管理员）。
+  getInviteCode: () =>
+    request<{ inviteCode: string }>('GET', '/api/v1/admin/invite-code'),
+
+  // 轮换全局邀请码（仅管理员），返回新的邀请码。
+  rotateInviteCode: () =>
+    request<{ inviteCode: string }>('POST', '/api/v1/admin/invite-code/rotate'),
+
   // multipart 上传：不要手动设置 Content-Type，交给浏览器带 boundary。
   upload: async <T>(path: string, file: File): Promise<T> => {
     const form = new FormData()
