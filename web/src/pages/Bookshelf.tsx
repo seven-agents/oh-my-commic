@@ -89,7 +89,6 @@ export default function Bookshelf() {
           />
         ) : (
           <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
-            <CreateCard onClick={() => setCreateOpen(true)} />
             {books.map((book) => (
               <BookCard
                 key={book.id}
@@ -99,6 +98,7 @@ export default function Bookshelf() {
                 onDelete={askDelete}
               />
             ))}
+            <CreateCard onClick={() => setCreateOpen(true)} />
           </div>
         )}
       </main>
