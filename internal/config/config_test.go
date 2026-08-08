@@ -5,8 +5,16 @@ import (
 	"testing"
 )
 
-func TestLoadDefaults(t *testing.T) {
+// setKeys sets both required API keys so Load() succeeds; individual tests may
+// still unset one to exercise the missing-key paths.
+func setKeys(t *testing.T) {
+	t.Helper()
 	os.Setenv("DASHSCOPE_API_KEY", "sk-test")
+	os.Setenv("ARK_API_KEY", "ark-test")
+}
+
+func TestLoadDefaults(t *testing.T) {
+	setKeys(t)
 	c, err := Load()
 	if err != nil {
 		t.Fatal(err)
@@ -17,22 +25,34 @@ func TestLoadDefaults(t *testing.T) {
 	if c.DashScopeKey != "sk-test" {
 		t.Fatalf("key not loaded")
 	}
+	if c.ArkKey != "ark-test" {
+		t.Fatalf("ark key not loaded")
+	}
 }
 
 func TestLoadMissingKey(t *testing.T) {
+	os.Setenv("ARK_API_KEY", "ark-test")
 	os.Unsetenv("DASHSCOPE_API_KEY")
 	if _, err := Load(); err == nil {
 		t.Fatal("expected error when DASHSCOPE_API_KEY is missing")
 	}
 }
 
-func TestLoadOverridesAndDefaults(t *testing.T) {
+func TestLoadMissingArkKey(t *testing.T) {
 	os.Setenv("DASHSCOPE_API_KEY", "sk-test")
+	os.Unsetenv("ARK_API_KEY")
+	if _, err := Load(); err == nil {
+		t.Fatal("expected error when ARK_API_KEY is missing")
+	}
+}
+
+func TestLoadOverridesAndDefaults(t *testing.T) {
+	setKeys(t)
 	os.Setenv("PORT", "9090")
 	defer os.Unsetenv("PORT")
-	os.Unsetenv("QWEN_IMAGE_MODEL")
-	os.Unsetenv("QWEN_EDIT_MODEL")
-	os.Unsetenv("QWEN_RENDER_MODEL")
+	os.Unsetenv("SEEDREAM_MODEL")
+	os.Unsetenv("SEEDREAM_BASE_URL")
+	os.Unsetenv("RENDER_MAX_REFS")
 	os.Unsetenv("QWEN_RENDER_MAX_REFS")
 
 	c, err := Load()
@@ -48,31 +68,28 @@ func TestLoadOverridesAndDefaults(t *testing.T) {
 	if c.DataDir != "data" {
 		t.Fatalf("default DataDir wrong: %s", c.DataDir)
 	}
-	if c.ImageModel != "wan2.2-t2i-plus" {
-		t.Fatalf("default ImageModel wrong: %s", c.ImageModel)
+	if c.SeedreamModel != "doubao-seedream-4-0-250828" {
+		t.Fatalf("default SeedreamModel wrong: %s", c.SeedreamModel)
 	}
-	if c.EditModel != "qwen-image-edit" {
-		t.Fatalf("default EditModel wrong: %s", c.EditModel)
+	if c.SeedreamBaseURL != "https://ark.cn-beijing.volces.com/api/v3" {
+		t.Fatalf("default SeedreamBaseURL wrong: %s", c.SeedreamBaseURL)
 	}
-	if c.RenderModel != "qwen-image-edit-plus" {
-		t.Fatalf("default RenderModel wrong: %s", c.RenderModel)
-	}
-	if c.RenderMaxRefs != 3 {
+	if c.RenderMaxRefs != 10 {
 		t.Fatalf("default RenderMaxRefs wrong: %d", c.RenderMaxRefs)
 	}
 	if c.TextBaseURL != "https://dashscope.aliyuncs.com/compatible-mode/v1" {
 		t.Fatalf("default TextBaseURL wrong: %s", c.TextBaseURL)
 	}
-	if c.ImageBaseURL != "https://dashscope.aliyuncs.com/api/v1" {
-		t.Fatalf("default ImageBaseURL wrong: %s", c.ImageBaseURL)
-	}
 }
 
 func TestLoadRenderMaxRefs(t *testing.T) {
-	os.Setenv("DASHSCOPE_API_KEY", "sk-test")
+	setKeys(t)
+	defer os.Unsetenv("RENDER_MAX_REFS")
+	defer os.Unsetenv("QWEN_RENDER_MAX_REFS")
 
-	// Valid override is parsed.
-	os.Setenv("QWEN_RENDER_MAX_REFS", "6")
+	// New RENDER_MAX_REFS override is parsed.
+	os.Unsetenv("QWEN_RENDER_MAX_REFS")
+	os.Setenv("RENDER_MAX_REFS", "6")
 	c, err := Load()
 	if err != nil {
 		t.Fatal(err)
@@ -81,16 +98,39 @@ func TestLoadRenderMaxRefs(t *testing.T) {
 		t.Fatalf("override RenderMaxRefs wrong: %d", c.RenderMaxRefs)
 	}
 
-	// Invalid / non-positive values fall back to the default.
-	for _, bad := range []string{"abc", "0", "-2", ""} {
-		os.Setenv("QWEN_RENDER_MAX_REFS", bad)
+	// RENDER_MAX_REFS takes precedence over the legacy name.
+	os.Setenv("QWEN_RENDER_MAX_REFS", "3")
+	os.Setenv("RENDER_MAX_REFS", "8")
+	c, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.RenderMaxRefs != 8 {
+		t.Fatalf("RENDER_MAX_REFS should win over QWEN_RENDER_MAX_REFS, got %d", c.RenderMaxRefs)
+	}
+
+	// Legacy QWEN_RENDER_MAX_REFS is honored when RENDER_MAX_REFS is unset.
+	os.Unsetenv("RENDER_MAX_REFS")
+	os.Setenv("QWEN_RENDER_MAX_REFS", "5")
+	c, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.RenderMaxRefs != 5 {
+		t.Fatalf("legacy QWEN_RENDER_MAX_REFS fallback wrong: %d", c.RenderMaxRefs)
+	}
+
+	// Invalid / non-positive values fall back to the default (10).
+	os.Unsetenv("QWEN_RENDER_MAX_REFS")
+	for _, bad := range []string{"abc", "0", "-2"} {
+		os.Setenv("RENDER_MAX_REFS", bad)
 		c, err := Load()
 		if err != nil {
 			t.Fatal(err)
 		}
-		if c.RenderMaxRefs != 3 {
-			t.Fatalf("RenderMaxRefs for %q should fall back to 3, got %d", bad, c.RenderMaxRefs)
+		if c.RenderMaxRefs != 10 {
+			t.Fatalf("RenderMaxRefs for %q should fall back to 10, got %d", bad, c.RenderMaxRefs)
 		}
 	}
-	os.Unsetenv("QWEN_RENDER_MAX_REFS")
+	os.Unsetenv("RENDER_MAX_REFS")
 }

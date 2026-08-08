@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/seven-agents/oh-my-commic/internal/models"
@@ -136,15 +137,22 @@ func TestStoryboardChatParsesAndSanitizes(t *testing.T) {
 	}
 }
 
-// TestStoryboardChatDropsSceneWhenThreeCharacters verifies the character-first
-// ≤3 rule: three valid characters plus a scene must drop the scene.
-func TestStoryboardChatDropsSceneWhenThreeCharacters(t *testing.T) {
-	assets := AssetContext{
-		Characters: []models.Character{{ID: 1}, {ID: 2}, {ID: 3}},
-		Scenes:     []models.Scene{{ID: 5}},
+// TestStoryboardChatDropsSceneWhenTenCharacters verifies the character-first
+// ≤10 rule: ten valid characters plus a scene must drop the scene (characters
+// already fill the 10-reference budget).
+func TestStoryboardChatDropsSceneWhenTenCharacters(t *testing.T) {
+	chars := make([]models.Character, 0, 10)
+	crefs := make([]string, 0, 10)
+	for i := 1; i <= 10; i++ {
+		chars = append(chars, models.Character{ID: int64(i)})
+		crefs = append(crefs, `{"id":`+strconv.Itoa(i)+`,"expression":"e"}`)
 	}
-	body := `{"reply":"ok","panels":[{"location":"L","sceneId":5,` +
-		`"characters":[{"id":1,"expression":"a"},{"id":2,"expression":"b"},{"id":3,"expression":"c"}],` +
+	assets := AssetContext{
+		Characters: chars,
+		Scenes:     []models.Scene{{ID: 99}},
+	}
+	body := `{"reply":"ok","panels":[{"location":"L","sceneId":99,` +
+		`"characters":[` + strings.Join(crefs, ",") + `],` +
 		`"event":"E","caption":"C","imagePrompt":"P"}]}`
 	ts := fakeChatServer(body)
 	defer ts.Close()
@@ -155,11 +163,37 @@ func TestStoryboardChatDropsSceneWhenThreeCharacters(t *testing.T) {
 		t.Fatalf("storyboard chat: %v", err)
 	}
 	p := res.Panels[0]
-	if len(p.Characters) != 3 {
-		t.Fatalf("应保留 3 个角色, got %d", len(p.Characters))
+	if len(p.Characters) != 10 {
+		t.Fatalf("应保留 10 个角色, got %d", len(p.Characters))
 	}
 	if p.SceneID != 0 {
-		t.Fatalf("已有 3 个角色时场景应被丢弃, got sceneId=%d", p.SceneID)
+		t.Fatalf("已有 10 个角色时场景应被丢弃, got sceneId=%d", p.SceneID)
+	}
+}
+
+// TestStoryboardChatCapsElevenCharactersToTen verifies characters beyond the
+// 10-reference budget are dropped (11 valid characters → capped to 10).
+func TestStoryboardChatCapsElevenCharactersToTen(t *testing.T) {
+	chars := make([]models.Character, 0, 11)
+	crefs := make([]string, 0, 11)
+	for i := 1; i <= 11; i++ {
+		chars = append(chars, models.Character{ID: int64(i)})
+		crefs = append(crefs, `{"id":`+strconv.Itoa(i)+`,"expression":"e"}`)
+	}
+	assets := AssetContext{Characters: chars}
+	body := `{"reply":"ok","panels":[{"location":"L","sceneId":0,` +
+		`"characters":[` + strings.Join(crefs, ",") + `],` +
+		`"event":"E","caption":"C","imagePrompt":"P"}]}`
+	ts := fakeChatServer(body)
+	defer ts.Close()
+
+	c := &Client{Key: "sk-x", TextBaseURL: ts.URL, TextModel: "qwen-plus", HTTP: ts.Client()}
+	res, err := StoryboardChat(context.Background(), c, nil, assets, 0)
+	if err != nil {
+		t.Fatalf("storyboard chat: %v", err)
+	}
+	if got := len(res.Panels[0].Characters); got != 10 {
+		t.Fatalf("11 个角色应被截断到 10, got %d", got)
 	}
 }
 

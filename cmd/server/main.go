@@ -52,15 +52,16 @@ func main() {
 	bookHandler := book.NewHandler(bookSvc)
 
 	aiClient := &ai.Client{
-		Key:          cfg.DashScopeKey,
-		TextBaseURL:  cfg.TextBaseURL,
-		ImageBaseURL: cfg.ImageBaseURL,
-		TextModel:    cfg.TextModel,
-		ImageModel:   cfg.ImageModel,
-		EditModel:    cfg.EditModel,
-		RenderModel:  cfg.RenderModel,
-		// Multi-image edits (panel render) can take 30-60s+; a 60s request
-		// timeout is too tight, so allow 120s for the AI client itself.
+		// Text (Qwen chat / storyboard) via DashScope.
+		Key:         cfg.DashScopeKey,
+		TextBaseURL: cfg.TextBaseURL,
+		TextModel:   cfg.TextModel,
+		// Images (comicify + panel render) via Volcano Ark Seedream 4.0.
+		ArkKey:          cfg.ArkKey,
+		SeedreamModel:   cfg.SeedreamModel,
+		SeedreamBaseURL: cfg.SeedreamBaseURL,
+		// Seedream 2048x2048 generation can take ~20-40s (more with references),
+		// so allow a generous 120s request timeout for the AI client.
 		HTTP: &http.Client{Timeout: 120 * time.Second},
 	}
 

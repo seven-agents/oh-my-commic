@@ -38,37 +38,24 @@ var pngBytes = []byte{
 	0x42, 0x60, 0x82,
 }
 
-// fakeGen is a test ImageGenerator implementing BOTH methods. It records the
-// prompt and refs it received (race-safe), which method was called, and returns
-// a preconfigured URL and error.
+// fakeGen is a test ImageGenerator. It records the prompt and refs it received
+// (race-safe), how many times it was called, and returns a preconfigured URL and
+// error. Seedream handles both text2image (no refs) and image-edit (refs) via a
+// single method, so the fake has one call path.
 type fakeGen struct {
-	mu       sync.Mutex
-	url      string
-	err      error
-	prompt   string
-	refs     []string
-	calls    int // total calls across both methods
-	t2iCalls int // GenerateImage (text2image fallback)
-	refCalls int // RenderWithRefs (multi-image edit)
+	mu     sync.Mutex
+	url    string
+	err    error
+	prompt string
+	refs   []string
+	calls  int
 }
 
-// GenerateImage is the text2image fallback path.
-func (g *fakeGen) GenerateImage(_ context.Context, prompt string, refs []string) (string, error) {
+// SeedreamImage is the single image-generation path (refs present or empty).
+func (g *fakeGen) SeedreamImage(_ context.Context, prompt string, refs []string) (string, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	g.calls++
-	g.t2iCalls++
-	g.prompt = prompt
-	g.refs = refs
-	return g.url, g.err
-}
-
-// RenderWithRefs is the multi-image edit path.
-func (g *fakeGen) RenderWithRefs(_ context.Context, prompt string, refs []string) (string, error) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	g.calls++
-	g.refCalls++
 	g.prompt = prompt
 	g.refs = refs
 	return g.url, g.err
@@ -86,10 +73,10 @@ func (g *fakeGen) lastRefs() []string {
 	return g.refs
 }
 
-func (g *fakeGen) counts() (total, t2i, ref int) {
+func (g *fakeGen) count() int {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.calls, g.t2iCalls, g.refCalls
+	return g.calls
 }
 
 // renderTestEnv bundles a render.Service wired to real asset/chapter/panel
@@ -263,11 +250,9 @@ func TestRenderPanelHappyPath(t *testing.T) {
 		t.Fatalf("prompt missing reference-image binding for the scene: %q", prompt)
 	}
 
-	// With ≥1 matched reference, the multi-image edit path must be used (not
-	// the text2image fallback).
-	total, t2i, ref := env.gen.counts()
-	if ref != 1 || t2i != 0 || total != 1 {
-		t.Fatalf("expected exactly one RenderWithRefs call, got total=%d t2i=%d ref=%d", total, t2i, ref)
+	// Exactly one Seedream call regardless of ref count.
+	if got := env.gen.count(); got != 1 {
+		t.Fatalf("expected exactly one SeedreamImage call, got %d", got)
 	}
 
 	// References are forwarded as base64 data: URIs (character + scene => 2).
@@ -282,10 +267,10 @@ func TestRenderPanelHappyPath(t *testing.T) {
 	}
 }
 
-// TestRenderPanelNoRefsFallsBackToText2Image verifies a panel with no matched
-// characters or scene uses GenerateImage (text2image) rather than the edit
-// endpoint, and still completes.
-func TestRenderPanelNoRefsFallsBackToText2Image(t *testing.T) {
+// TestRenderPanelNoRefsUsesText2Image verifies a panel with no matched
+// characters or scene still renders via Seedream with an empty ref list
+// (Seedream does text2image when no image refs are supplied).
+func TestRenderPanelNoRefsUsesText2Image(t *testing.T) {
 	env := newRenderTestEnv(t)
 	b, err := env.books.Create(1, "书", "ghibli", "")
 	if err != nil {
@@ -309,12 +294,11 @@ func TestRenderPanelNoRefsFallsBackToText2Image(t *testing.T) {
 	if updated.Status != "done" {
 		t.Fatalf("status should be done, got %q", updated.Status)
 	}
-	total, t2i, ref := env.gen.counts()
-	if t2i != 1 || ref != 0 || total != 1 {
-		t.Fatalf("expected exactly one GenerateImage fallback, got total=%d t2i=%d ref=%d", total, t2i, ref)
+	if got := env.gen.count(); got != 1 {
+		t.Fatalf("expected exactly one SeedreamImage call, got %d", got)
 	}
 	if len(env.gen.lastRefs()) != 0 {
-		t.Fatalf("text2image fallback should receive no refs, got %v", env.gen.lastRefs())
+		t.Fatalf("text2image (no refs) should receive no refs, got %v", env.gen.lastRefs())
 	}
 }
 
@@ -372,9 +356,8 @@ func TestRenderPanelCapsRefs(t *testing.T) {
 	if len(refs) != 2 {
 		t.Fatalf("expected refs capped to 2, got %d", len(refs))
 	}
-	_, t2i, ref := env.gen.counts()
-	if ref != 1 || t2i != 0 {
-		t.Fatalf("expected RenderWithRefs path, got t2i=%d ref=%d", t2i, ref)
+	if got := env.gen.count(); got != 1 {
+		t.Fatalf("expected exactly one SeedreamImage call, got %d", got)
 	}
 }
 
