@@ -29,14 +29,17 @@ async function registerAndLand(page: import('@playwright/test').Page, username: 
   await expect(page.getByRole('heading', { name: /我的书架/ })).toBeVisible()
 }
 
-test('匿名可访问社区路由，页面正常渲染', async ({ page }) => {
+test('匿名可访问社区路由，壳与社区内容正常渲染', async ({ page }) => {
   await page.goto('/community')
 
   // 未登录不应被重定向到 /login。
   await expect(page).toHaveURL(/\/community/)
 
-  // 社区页主标题应可见（h1「社区 🌈」；用精确名避免匹配到空态/错误态的 h3）。
-  await expect(page.getByRole('heading', { name: '社区 🌈' })).toBeVisible()
+  // 应用壳左栏「社区」tab 存在（NavLink）。用精确名避免匹配到卡片里含「社区」的书名。
+  await expect(page.getByRole('link', { name: '🌈 社区' })).toBeVisible()
+
+  // 社区内容区 hero slogan 可见。
+  await expect(page.getByRole('heading', { name: /读一本别人画的魔法漫画/ })).toBeVisible()
 })
 
 test('owner 建书并设为公开后，书出现在社区', async ({ page }) => {

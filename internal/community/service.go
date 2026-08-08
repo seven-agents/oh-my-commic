@@ -29,10 +29,11 @@ func clampPaging(limit, offset int) (int, int) {
 	return limit, offset
 }
 
-// ListPublic returns the public feed, newest first.
-func (s *Service) ListPublic(viewerKey string, limit, offset int) ([]CommunityBook, error) {
+// ListPublic returns the public feed. sort is passed through to the repo, which
+// whitelists it (unknown -> newest-first). limit/offset are clamped.
+func (s *Service) ListPublic(viewerKey, sort string, limit, offset int) ([]CommunityBook, error) {
 	limit, offset = clampPaging(limit, offset)
-	return s.repo.ListPublic(viewerKey, limit, offset)
+	return s.repo.ListPublic(viewerKey, sort, limit, offset)
 }
 
 // GetPublicDetail returns one public book's full read payload, or ErrNotFound.

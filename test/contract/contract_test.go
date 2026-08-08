@@ -507,6 +507,17 @@ func TestContractCommunity(t *testing.T) {
 		t.Fatalf("community list: want 1 book id=%d, got %+v", b.ID, feed)
 	}
 
+	// --- anonymous GET /community/books?sort=hot -> 200 CommunityBook[] (contract-validated) ---
+	code, body = app.call(t, http.MethodGet, "/api/v1/community/books?sort=hot", "", nil)
+	if code != http.StatusOK {
+		t.Fatalf("community list sort=hot: want 200, got %d: %s", code, body)
+	}
+	var feedHot []community.CommunityBook
+	mustJSON(t, body, &feedHot)
+	if len(feedHot) != 1 || feedHot[0].ID != b.ID {
+		t.Fatalf("community list sort=hot: want 1 book id=%d, got %+v", b.ID, feedHot)
+	}
+
 	communityBookPath := "/api/v1/community/books/" + itoa(b.ID)
 
 	// --- anonymous GET /community/books/{id} -> 200 CommunityBookDetail ---

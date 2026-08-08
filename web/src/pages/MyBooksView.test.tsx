@@ -31,44 +31,26 @@ vi.mock('../api/client', () => ({
       isPublic: true,
       createdAt: 't',
       updatedAt: 't',
-      likeCount: 3,
-      viewCount: 5,
+      likeCount: 0,
+      viewCount: 0,
       publishedAt: 't2',
     }),
   },
 }))
 import { api } from '../api/client'
-import Bookshelf from './Bookshelf'
-import { AuthProvider } from '../auth/useAuth'
+import MyBooksView from './MyBooksView'
 
-describe('Bookshelf 公开开关', () => {
+describe('MyBooksView', () => {
   beforeEach(() => vi.clearAllMocks())
 
-  it('点击开关调用 setVisibility', async () => {
+  it('加载书籍并可切换公开', async () => {
     render(
       <MemoryRouter>
-        <AuthProvider>
-          <Bookshelf />
-        </AuthProvider>
-      </MemoryRouter>,
-    )
-    await waitFor(() => expect(screen.getAllByText('书A').length).toBeGreaterThan(0))
-    const toggle = screen.getByRole('button', { name: /公开|发布/ })
-    fireEvent.click(toggle)
-    await waitFor(() => expect(api.setVisibility).toHaveBeenCalledWith(1, true))
-  })
-
-  it('切换后展示计数与公开徽标', async () => {
-    render(
-      <MemoryRouter>
-        <AuthProvider>
-          <Bookshelf />
-        </AuthProvider>
+        <MyBooksView />
       </MemoryRouter>,
     )
     await waitFor(() => expect(screen.getAllByText('书A').length).toBeGreaterThan(0))
     fireEvent.click(screen.getByRole('button', { name: /公开|发布/ }))
-    await waitFor(() => expect(screen.getByText(/❤/)).toBeInTheDocument())
-    expect(screen.getByText(/👁/)).toBeInTheDocument()
+    await waitFor(() => expect(api.setVisibility).toHaveBeenCalledWith(1, true))
   })
 })

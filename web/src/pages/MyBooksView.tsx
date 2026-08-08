@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AppHeader } from '../components/AppHeader'
 import { BookCard } from '../components/BookCard'
 import { Button, EmptyState, Input, LoadingClouds, Modal } from '../components/ui'
 import { api } from '../api/client'
@@ -8,7 +7,7 @@ import type { Book } from '../api/types'
 import { errorMessage } from '../api/errors'
 import { useSubmitOnce } from '../hooks/useSubmitOnce'
 
-export default function Bookshelf() {
+export default function MyBooksView() {
   const navigate = useNavigate()
   const [books, setBooks] = useState<Book[]>([])
   const [loading, setLoading] = useState(true)
@@ -79,9 +78,7 @@ export default function Bookshelf() {
   }
 
   return (
-    <div className="min-h-screen bg-cream">
-      <AppHeader />
-
+    <>
       <main className="mx-auto max-w-6xl px-6 py-8">
         <div className="mb-6">
           <h1 className="font-display text-3xl font-extrabold text-ink">我的书架 📚</h1>
@@ -145,7 +142,7 @@ export default function Bookshelf() {
           </div>
         )}
       </Modal>
-    </div>
+    </>
   )
 }
 

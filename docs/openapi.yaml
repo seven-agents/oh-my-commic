@@ -983,6 +983,13 @@ paths:
           schema:
             type: integer
             minimum: 0
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [new, hot]
+          description: 排序方式；new=最新发布(缺省)，hot=最多点赞。未知值回落 new。
       responses:
         "200":
           description: 公开书列表

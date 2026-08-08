@@ -1,7 +1,7 @@
 // 轻量 fetch 封装。所有业务路径已包含版本化前缀 /api/v1，base 为空字符串。
 // 始终携带 cookie（credentials: 'include'）。非 2xx 抛出带类型的 ApiError。
 
-import type { User, Book, CommunityBook, CommunityBookDetail, LikeResult } from './types'
+import type { User, Book, CommunityBook, CommunityBookDetail, CommunitySort, LikeResult } from './types'
 
 export class ApiError extends Error {
   status: number
@@ -116,9 +116,14 @@ export const api = {
   rotateInviteCode: () =>
     request<{ inviteCode: string }>('POST', '/api/v1/admin/invite-code/rotate'),
 
-  // 社区公开 feed（分页）。匿名可调。
-  listCommunity: (limit = 20, offset = 0) =>
-    request<CommunityBook[]>('GET', `/api/v1/community/books?limit=${limit}&offset=${offset}`),
+  // 社区公开 feed（分页 + 排序）。匿名可调。
+  listCommunity: (opts: { sort?: CommunitySort; limit?: number; offset?: number } = {}) => {
+    const { sort = 'new', limit = 20, offset = 0 } = opts
+    return request<CommunityBook[]>(
+      'GET',
+      `/api/v1/community/books?sort=${sort}&limit=${limit}&offset=${offset}`,
+    )
+  },
 
   // 公开阅读详情（book+chapters+panels）。匿名可调；非公开/不存在抛 404。
   getCommunityBook: (id: number) =>
