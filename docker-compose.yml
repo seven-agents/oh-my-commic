@@ -1,6 +1,7 @@
 services:
   app:
-    image: oh-my-commic:latest
+    # 官方发布镜像（Docker Hub）。也可自行 buildx 本地构建后改回 oh-my-commic:latest。
+    image: sevenoxin/oh-my-commic:latest
     container_name: oh-my-commic
     restart: unless-stopped
     # 密钥与模型配置从同目录 .env 注入（DASHSCOPE_API_KEY / ARK_API_KEY / SEEDREAM_* 等）

@@ -108,8 +108,43 @@ cd web && npm install && npm run dev
 | `SEEDREAM_MODEL` | 出图模型 id | `doubao-seedream-4-0-250828` |
 | `SEEDREAM_BASE_URL` | 出图接口 base url | 火山方舟 Ark v3 |
 | `RENDER_MAX_REFS` | 每格出图最多参考图数（≤10） | `10` |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` / `ADMIN_EMAIL` | 启动时按此播种管理员（空用户名=不播种；用户名/密码非法则 fatal） | 空 |
+| `INVITE_CODE` | 全局邀请码；**空=注册未开放**，缺省则随机生成并打日志 `邀请码: ...` | 随机 |
+| `SIGNUP_CREDITS` | 注册赠送积分（出图/漫画化各扣 1，失败退还） | `100` |
 
 > ⚠️ 切勿把 API key 提交到 git。`.env`、`*.db`、`web/dist/`、`web/node_modules/` 均已在 `.gitignore` 中排除。
+
+## 🐳 Docker 部署
+
+官方镜像发布在 Docker Hub：**[`sevenoxin/oh-my-commic`](https://hub.docker.com/r/sevenoxin/oh-my-commic)**（`main` 推送即打 `latest` + 短 commit SHA，`linux/amd64`）。
+
+**1) 准备 `.env`**（与 `docker-compose.yml` 同目录）：把 `.env.example` 复制过来，至少填 `DASHSCOPE_API_KEY`、`ARK_API_KEY`，并设 `ADMIN_USERNAME`/`ADMIN_PASSWORD`/`INVITE_CODE`（否则没有管理员、注册也进不来）。**密钥只在 `.env`，绝不进镜像**（compose 用 `env_file` 运行时注入）。
+
+**2) 起服务**（`docker-compose.yml` 已指向 `sevenoxin/oh-my-commic:latest`，宿主 `80` → 容器 `8080`，数据持久化到具名卷 `omc-data:/data`）：
+
+```bash
+docker compose pull      # 拉最新镜像
+docker compose up -d      # 后台启动
+docker compose logs -f    # 看启动日志（首次会打印随机邀请码，若未在 .env 指定）
+```
+
+打开 `http://<服务器IP>/` 即可。用 `.env` 里的 `ADMIN_USERNAME`/`ADMIN_PASSWORD` 登录，进「个人资料」查看/轮换邀请码，把邀请码发给要注册的人。
+
+**3) 升级到新版本**：
+
+```bash
+docker compose pull && docker compose up -d    # 拉新镜像并平滑重启；数据卷保留
+```
+
+> DB 迁移是幂等的（`ALTER ADD COLUMN`/`CREATE TABLE IF NOT EXISTS`），一般直接升级即可。若想**清空数据重来**：`docker compose down && docker volume rm oh-my-commic_omc-data && docker compose up -d`。
+
+**4) 内网/无法访问 Docker Hub 的服务器**（如国内云）：本地拉好再直传，免配镜像加速器：
+
+```bash
+docker pull --platform linux/amd64 sevenoxin/oh-my-commic:latest
+docker save sevenoxin/oh-my-commic:latest | gzip | ssh <server> 'gunzip | docker load'
+# 然后在服务器上 docker compose up -d
+```
 
 ## 📦 项目结构（规划）
 
