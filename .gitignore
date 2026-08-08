@@ -19,6 +19,12 @@ web/dist/
 node_modules/
 *.tsbuildinfo
 
+# Playwright (E2E artifacts)
+web/playwright-report/
+web/test-results/
+web/blob-report/
+web/.playwright/
+
 # Uploaded / generated media (local storage)
 /data/
 /uploads/
