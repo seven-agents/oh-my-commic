@@ -164,6 +164,10 @@ oh-my-commic/
 └── .env                 # 本地密钥(gitignored)
 ```
 
+## 📖 使用文档
+
+图文教程（建演员表 → 讲故事拆镜 → 逐格出图 → 拼成书 → 发社区）见 [`docs/USAGE.md`](docs/USAGE.md)。
+
 ## 🎬 演示脚本
 
 3 分钟面试演示走位见 [`docs/DEMO.md`](docs/DEMO.md)。
