@@ -93,6 +93,21 @@ var schemaStatements = []string{
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL DEFAULT ''
 )`,
+	`CREATE TABLE IF NOT EXISTS book_likes (
+  book_id INTEGER NOT NULL,
+  user_id INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (book_id, user_id),
+  FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+)`,
+	`CREATE TABLE IF NOT EXISTS book_views (
+  book_id INTEGER NOT NULL,
+  viewer_key TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (book_id, viewer_key),
+  FOREIGN KEY (book_id) REFERENCES books(id) ON DELETE CASCADE
+)`,
 }
 
 // alterStatements holds idempotent ADD COLUMN migrations applied AFTER the
@@ -115,16 +130,20 @@ var alterStatements = []string{
 	`ALTER TABLE users ADD COLUMN age INTEGER NOT NULL DEFAULT 0`,
 	`ALTER TABLE users ADD COLUMN gender TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE users ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE books ADD COLUMN like_count INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE books ADD COLUMN view_count INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE books ADD COLUMN published_at TEXT NOT NULL DEFAULT ''`,
 }
 
 // indexStatements holds idempotent CREATE INDEX migrations applied AFTER the
 // ADD COLUMN migrations (so the target columns are guaranteed to exist). The
-// unique indexes are partial (WHERE col <> '') so that pre-existing rows with an
+// unique indexes are partial (WHERE col <> ”) so that pre-existing rows with an
 // empty username/email — the default for legacy accounts — do not collide; only
 // non-empty values are constrained to be unique.
 var indexStatements = []string{
 	`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username) WHERE username <> ''`,
 	`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email <> ''`,
+	`CREATE INDEX IF NOT EXISTS idx_books_public_published ON books(is_public, published_at)`,
 }
 
 // Migrate creates all application tables if they do not already exist, then

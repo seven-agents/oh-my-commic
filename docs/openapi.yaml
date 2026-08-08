@@ -1129,6 +1129,9 @@ components:
         - isPublic
         - createdAt
         - updatedAt
+        - likeCount
+        - viewCount
+        - publishedAt
       properties:
         id:
           type: integer
@@ -1149,6 +1152,12 @@ components:
         createdAt:
           type: string
         updatedAt:
+          type: string
+        likeCount:
+          type: integer
+        viewCount:
+          type: integer
+        publishedAt:
           type: string
 
     CharacterInput:

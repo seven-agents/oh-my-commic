@@ -418,7 +418,7 @@ func TestMigrateAddsProfileColumnsToLegacyUsers(t *testing.T) {
 
 	// Drop child tables (FK-reference users) then users, and recreate a legacy
 	// users table WITHOUT the new columns to simulate an old DB.
-	for _, tbl := range []string{"panels", "chapters", "scenes", "characters", "books", "sessions"} {
+	for _, tbl := range []string{"panels", "chapters", "scenes", "characters", "book_likes", "book_views", "books", "sessions"} {
 		if _, err := d.Exec(`DROP TABLE ` + tbl); err != nil {
 			t.Fatalf("drop %s: %v", tbl, err)
 		}

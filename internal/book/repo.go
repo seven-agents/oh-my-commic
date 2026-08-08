@@ -21,7 +21,7 @@ const defaultStyle = "ghibli"
 
 // bookColumns is the ordered column list used by every SELECT so the scan order
 // stays in sync with scanBook.
-const bookColumns = "id, user_id, title, cover_url, style, summary, is_public, created_at, updated_at"
+const bookColumns = "id, user_id, title, cover_url, style, summary, is_public, created_at, updated_at, like_count, view_count, published_at"
 
 // Repo persists and retrieves books backed by the books table. All methods that
 // address a specific book require the owning user's ID and filter on it, which
@@ -190,6 +190,7 @@ func scanBook(s scanner) (models.Book, error) {
 	if err := s.Scan(
 		&b.ID, &b.UserID, &b.Title, &b.CoverURL, &b.Style,
 		&b.Summary, &b.IsPublic, &b.CreatedAt, &b.UpdatedAt,
+		&b.LikeCount, &b.ViewCount, &b.PublishedAt,
 	); err != nil {
 		return models.Book{}, err
 	}
