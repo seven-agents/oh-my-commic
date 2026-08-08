@@ -30,9 +30,17 @@ async function registerAndLand(page: import('@playwright/test').Page, username: 
   await expect(page.getByRole('heading', { name: /我的书架/ })).toBeVisible()
 }
 
+test('根路径重定向到公开社区', async ({ page }) => {
+  // / 现在重定向到 /community（公开），旧的两卡 Home 已删除。
+  await page.goto('/')
+  await expect(page).toHaveURL(/\/community/)
+  // 社区内容区 hero slogan 可见（确认落在社区而非空白/登录）。
+  await expect(page.getByRole('heading', { name: /读一本别人画的魔法漫画/ })).toBeVisible()
+})
+
 test('注册新用户后自动登录落到书架', async ({ page }) => {
   await registerAndLand(page, uniqueUsername())
-  // 登录/注册成功落点为 /my（书架）；/ 现在是公开 Home。
+  // 登录/注册成功落点为 /my（书架）；/ 现在重定向到公开社区。
   await expect(page).toHaveURL(/\/my$/)
   await expect(page.getByRole('heading', { name: /我的书架/ })).toBeVisible()
 })
@@ -59,8 +67,7 @@ test('建一本书后书架可见', async ({ page }) => {
 test('登出后回到登录页', async ({ page }) => {
   await registerAndLand(page, uniqueUsername())
 
-  // 打开右上角用户菜单 → 退出
-  await page.getByRole('button', { name: '用户菜单' }).click()
+  // 应用壳左栏底部用户区「退出」按钮（新壳无下拉菜单，直接点）。
   await page.getByRole('button', { name: '退出' }).click()
 
   // 回到登录页
@@ -70,7 +77,7 @@ test('登出后回到登录页', async ({ page }) => {
 
 test('未登录直接访问受保护路由被拦截跳登录', async ({ page }) => {
   // 全新上下文，无登录态；访问书架 /my 应被 RequireAuth 重定向到 /login。
-  // （/ 现在是公开 Home，不再受保护、不跳登录。）
+  // （/ 现在重定向到公开社区 /community，不受保护、不跳登录。）
   await page.goto('/my')
   await expect(page).toHaveURL(/\/login$/)
   await expect(page.getByRole('button', { name: /开始画画/ })).toBeVisible()
