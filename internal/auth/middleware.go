@@ -29,12 +29,29 @@ func RequireUser(sess *Session) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			userID, ok := resolveUser(sess, r)
 			if !ok {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				writeUnauthorized(w)
 				return
 			}
 
 			ctx := context.WithValue(r.Context(), userIDKey, userID)
 			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// OptionalUser returns middleware for public endpoints that behave differently
+// for authenticated users. It resolves the session cookie like RequireUser but
+// NEVER rejects: a missing or unknown session simply passes through with no user
+// ID in context (auth.UserID returns 0). A valid session injects the user ID so
+// downstream handlers can personalize (e.g. compute a per-user "liked" flag or a
+// stable viewer key) without gating access.
+func OptionalUser(sess *Session) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if userID, ok := resolveUser(sess, r); ok {
+				r = r.WithContext(context.WithValue(r.Context(), userIDKey, userID))
+			}
+			next.ServeHTTP(w, r)
 		})
 	}
 }
@@ -62,7 +79,7 @@ func RequireAdmin(sess *Session, repo *UserRepo) func(http.Handler) http.Handler
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			userID, ok := resolveUser(sess, r)
 			if !ok {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				writeUnauthorized(w)
 				return
 			}
 
@@ -76,6 +93,15 @@ func RequireAdmin(sess *Session, repo *UserRepo) func(http.Handler) http.Handler
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// writeUnauthorized responds 401 with the uniform {"error": ...} JSON envelope,
+// matching the contract convention used across the API (an unauthenticated
+// request never gets a text/plain body).
+func writeUnauthorized(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusUnauthorized)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": "未登录"})
 }
 
 // writeForbidden responds 403 with the admin-only JSON error. Encoding a fixed

@@ -23,15 +23,18 @@ type User struct {
 
 // Book is a comic book owned by a User.
 type Book struct {
-	ID        int64  `json:"id"`
-	UserID    int64  `json:"userId"`
-	Title     string `json:"title"`
-	CoverURL  string `json:"coverUrl"`
-	Style     string `json:"style"`
-	Summary   string `json:"summary"`
-	IsPublic  bool   `json:"isPublic"`
-	CreatedAt string `json:"createdAt"`
-	UpdatedAt string `json:"updatedAt"`
+	ID          int64  `json:"id"`
+	UserID      int64  `json:"userId"`
+	Title       string `json:"title"`
+	CoverURL    string `json:"coverUrl"`
+	Style       string `json:"style"`
+	Summary     string `json:"summary"`
+	IsPublic    bool   `json:"isPublic"`
+	CreatedAt   string `json:"createdAt"`
+	UpdatedAt   string `json:"updatedAt"`
+	LikeCount   int    `json:"likeCount"`
+	ViewCount   int    `json:"viewCount"`
+	PublishedAt string `json:"publishedAt"`
 }
 
 // Character is a cast member (person, creature, etc.) within a Book.

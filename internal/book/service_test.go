@@ -196,3 +196,37 @@ func TestServiceUpdateValidatesTitle(t *testing.T) {
 		t.Fatalf("空标题更新应返回 ErrValidation, got %v", err)
 	}
 }
+
+func TestSetVisibilityPublishesAndUnpublishes(t *testing.T) {
+	svc := NewService(newTestBookRepo(t))
+	b, err := svc.Create(1, "书", "", "")
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	// 发布：is_public=true 且 published_at 非空。
+	pub, err := svc.SetVisibility(1, b.ID, true)
+	if err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	if !pub.IsPublic || pub.PublishedAt == "" {
+		t.Fatalf("publish should set is_public + published_at: %+v", pub)
+	}
+
+	// 下架：is_public=false，published_at 保留旧值。
+	un, err := svc.SetVisibility(1, b.ID, false)
+	if err != nil {
+		t.Fatalf("unpublish: %v", err)
+	}
+	if un.IsPublic {
+		t.Fatalf("unpublish should clear is_public: %+v", un)
+	}
+	if un.PublishedAt != pub.PublishedAt {
+		t.Fatalf("unpublish must keep published_at: got %q want %q", un.PublishedAt, pub.PublishedAt)
+	}
+
+	// 非 owner：404。
+	if _, err := svc.SetVisibility(2, b.ID, true); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("non-owner should get ErrNotFound, got %v", err)
+	}
+}

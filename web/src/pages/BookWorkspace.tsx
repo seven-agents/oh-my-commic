@@ -63,7 +63,7 @@ export default function BookWorkspace() {
     <div className="min-h-screen bg-cream">
       <AppHeader
         right={
-          <Link to="/">
+          <Link to="/my">
             <Button variant="ghost" className="text-sm">
               ← 书架
             </Button>
@@ -80,7 +80,7 @@ export default function BookWorkspace() {
             title="这本书没打开"
             description={loadError || '找不到这本书'}
             action={
-              <Link to="/">
+              <Link to="/my">
                 <Button variant="ghost">回到书架</Button>
               </Link>
             }

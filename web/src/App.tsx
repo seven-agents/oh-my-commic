@@ -1,5 +1,6 @@
 import { Routes, Route } from 'react-router-dom'
 import { RequireAuth } from './auth/RequireAuth'
+import Home from './pages/Home'
 import Login from './pages/Login'
 import Bookshelf from './pages/Bookshelf'
 import BookWorkspace from './pages/BookWorkspace'
@@ -8,6 +9,8 @@ import ChapterEditor from './pages/ChapterEditor'
 import Reader from './pages/Reader'
 import BookReader from './pages/BookReader'
 import Profile from './pages/Profile'
+import Community from './pages/Community'
+import CommunityReader from './pages/CommunityReader'
 import NotFound from './pages/NotFound'
 import type { ReactNode } from 'react'
 
@@ -20,7 +23,10 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
 
-      <Route path="/" element={<Protected><Bookshelf /></Protected>} />
+      <Route path="/" element={<Home />} />
+      <Route path="/community" element={<Community />} />
+      <Route path="/community/books/:id" element={<CommunityReader />} />
+      <Route path="/my" element={<Protected><Bookshelf /></Protected>} />
       <Route path="/profile" element={<Protected><Profile /></Protected>} />
       <Route path="/books/:id" element={<Protected><BookWorkspace /></Protected>} />
       <Route path="/books/:id/read" element={<Protected><BookReader /></Protected>} />

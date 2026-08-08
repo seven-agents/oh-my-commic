@@ -89,7 +89,7 @@ export default function Profile() {
     <div className="min-h-screen bg-cream">
       <AppHeader
         right={
-          <Link to="/">
+          <Link to="/my">
             <Button variant="ghost" className="text-sm">
               ← 返回
             </Button>

@@ -33,6 +33,7 @@
 | `comicify` | **资产漫画化**：上传图 → Seedream 图生图 → 锁定形象图（见 §3.4）|
 | `chapter` | 章节 CRUD + 状态机 + 封面章(is_cover) + conversation/panel_count/summary 持久化 |
 | `panel` | 分镜 CRUD（content + 结构字段 + 图片），批量替换/排序 |
+| `community` | **社区跨表只读**：公开 feed 列表 + 公开阅读详情（严格 `is_public`，非公开/不存在 404，作者仅 nickname/avatar）+ 点赞/独立访客浏览计数（`book_likes`/`book_views`）|
 | `ai` | **千问文本客户端 + 两段式分镜提示词 + Seedream 生图客户端**（见 §3）|
 | `render` | **单格出图编排**：拼 prompt + 参考图 → Seedream → 下载落地 → 回写 panel（见 §3.3）|
 | `story` | 编排层：storyboard-chat(第1段) + process-panel(第2段) |
@@ -44,7 +45,10 @@
 | 组件/页面 | 职责 |
 |---|---|
 | `pages/Login` | 登录/注册 |
-| `pages/Bookshelf` | 书架（阅读/编辑/删除按钮，创建卡在最后）|
+| `pages/Home` | 公开首页（两入口卡：社区 / 我的漫画）|
+| `pages/Community` | 社区 feed（公开，无需登录）|
+| `pages/CommunityReader` | 公开阅读器（公开阅读详情，复用 `BookReaderView`）|
+| `pages/Bookshelf` | 书架（`/my`，受保护；阅读/编辑/删除按钮，创建卡在最后；每卡公开/私密开关）|
 | `pages/BookWorkspace` | 演员表 + 章节列表(封面卡 + 第一章…) |
 | `pages/AssetEditor` | 角色/场景 上传 + 设定（保存时触发 comicify）|
 | `pages/ChapterEditor` | 分镜编辑器（分阶段：讲故事→解析出图→拼成书）|
@@ -54,6 +58,8 @@
 | `components/PanelGrid`/`PanelCard` | 出图阶段（**并发全部生成**；卡默认收起编辑、按需展开）|
 | `components/ComicCompose`/`ComicPage` | 拼版 |
 | `components/chapter/panelStage` | `canRenderPanel`（未解析禁止出图）|
+| `components/CommunityCard` | 社区 feed 单卡（封面 + 作者 nickname/avatar + 点赞/浏览数）|
+| `components/reader/BookReaderView` | 从 `BookReader` 抽出的**展示层**，owner 私有阅读与社区公开阅读共用 |
 
 ---
 

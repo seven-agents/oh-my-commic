@@ -58,3 +58,9 @@ func (s *Service) Update(userID, bookID int64, title, style, summary string) (mo
 func (s *Service) Delete(userID, bookID int64) error {
 	return s.repo.Delete(userID, bookID)
 }
+
+// SetVisibility publishes or unpublishes the book owned by userID. It returns
+// ErrNotFound if the book is not owned by the user.
+func (s *Service) SetVisibility(userID, bookID int64, isPublic bool) (models.Book, error) {
+	return s.repo.SetVisibility(userID, bookID, isPublic)
+}

@@ -41,6 +41,17 @@ export default function Bookshelf() {
     navigate(`/books/${book.id}`)
   }
 
+  // 发布/下架：调 setVisibility，用返回的 book 不可变替换列表中该项。
+  // useSubmitOnce 在 VisibilityToggle 里守卫，避免双击并发。
+  const toggleVisibility = async (book: Book) => {
+    try {
+      const updated = await api.setVisibility(book.id, !book.isPublic)
+      setBooks((prev) => prev.map((b) => (b.id === updated.id ? updated : b)))
+    } catch (err) {
+      setLoadError(errorMessage(err))
+    }
+  }
+
   const askDelete = (book: Book) => {
     setDeleteError('')
     setPendingDelete(book)
@@ -97,6 +108,7 @@ export default function Bookshelf() {
                 onRead={(id) => navigate(`/books/${id}/read`)}
                 onEdit={(id) => navigate(`/books/${id}`)}
                 onDelete={askDelete}
+                onToggleVisibility={toggleVisibility}
               />
             ))}
             <CreateCard onClick={() => setCreateOpen(true)} />

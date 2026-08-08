@@ -63,7 +63,7 @@ export default function Reader() {
             title="这本书还没准备好"
             description={error || '找不到这个章节'}
             action={
-              <Link to="/">
+              <Link to="/my">
                 <Button variant="ghost">回到书架</Button>
               </Link>
             }

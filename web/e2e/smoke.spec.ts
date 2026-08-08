@@ -32,7 +32,8 @@ async function registerAndLand(page: import('@playwright/test').Page, username: 
 
 test('注册新用户后自动登录落到书架', async ({ page }) => {
   await registerAndLand(page, uniqueUsername())
-  await expect(page).toHaveURL(/\/$|\/$/)
+  // 登录/注册成功落点为 /my（书架）；/ 现在是公开 Home。
+  await expect(page).toHaveURL(/\/my$/)
   await expect(page.getByRole('heading', { name: /我的书架/ })).toBeVisible()
 })
 
@@ -49,8 +50,8 @@ test('建一本书后书架可见', async ({ page }) => {
   // 建书成功后前端跳到该书的工作台，标题应出现（可能出现在多处，取首个）
   await expect(page.getByText(title).first()).toBeVisible()
 
-  // 回到书架，断言这本书出现在书架上（书卡封面 + 标题，取首个即可）
-  await page.goto('/')
+  // 回到书架（/my），断言这本书出现在书架上（书卡封面 + 标题，取首个即可）
+  await page.goto('/my')
   await expect(page.getByRole('heading', { name: /我的书架/ })).toBeVisible()
   await expect(page.getByText(title).first()).toBeVisible()
 })
@@ -68,8 +69,9 @@ test('登出后回到登录页', async ({ page }) => {
 })
 
 test('未登录直接访问受保护路由被拦截跳登录', async ({ page }) => {
-  // 全新上下文，无登录态；访问书架应被 RequireAuth 重定向到 /login
-  await page.goto('/')
+  // 全新上下文，无登录态；访问书架 /my 应被 RequireAuth 重定向到 /login。
+  // （/ 现在是公开 Home，不再受保护、不跳登录。）
+  await page.goto('/my')
   await expect(page).toHaveURL(/\/login$/)
   await expect(page.getByRole('button', { name: /开始画画/ })).toBeVisible()
 })

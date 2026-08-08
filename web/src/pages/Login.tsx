@@ -79,7 +79,7 @@ export default function Login() {
     }
     try {
       await login(username.trim(), password)
-      navigate('/', { replace: true })
+      navigate('/my', { replace: true })
     } catch (err) {
       setError(errorMessage(err))
     }
@@ -100,7 +100,7 @@ export default function Login() {
         inviteCode: inviteCode.trim(),
         nickname: nickname.trim() || undefined,
       })
-      navigate('/', { replace: true })
+      navigate('/my', { replace: true })
     } catch (err) {
       setError(errorMessage(err))
     }

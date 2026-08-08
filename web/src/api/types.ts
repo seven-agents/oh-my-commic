@@ -29,6 +29,9 @@ export type Book = {
   isPublic: boolean
   createdAt: string
   updatedAt: string
+  likeCount: number
+  viewCount: number
+  publishedAt: string
 }
 
 export type CharacterType = 'character' | 'pet'
@@ -104,4 +107,47 @@ export type ChatMessage = {
 export type StoryboardChatRequest = {
   messages: ChatMessage[]
   panelCount?: number
+}
+
+export interface Author {
+  nickname: string
+  avatarUrl: string
+}
+
+export interface CommunityBook {
+  id: number
+  title: string
+  coverUrl: string
+  summary: string
+  author: Author
+  likeCount: number
+  viewCount: number
+  liked: boolean
+  publishedAt: string
+}
+
+export interface ReaderChapter {
+  title: string
+  summary: string
+  order: number
+  isCover: boolean
+  panels: Panel[]
+}
+
+export interface CommunityBookDetail {
+  id: number
+  title: string
+  coverUrl: string
+  summary: string
+  style: string
+  author: Author
+  likeCount: number
+  viewCount: number
+  liked: boolean
+  chapters: ReaderChapter[]
+}
+
+export interface LikeResult {
+  likeCount: number
+  liked: boolean
 }

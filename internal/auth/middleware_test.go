@@ -35,6 +35,42 @@ func TestRequireUser(t *testing.T) {
 	}
 }
 
+func TestOptionalUser(t *testing.T) {
+	sess := NewSession(nil)
+	token := sess.Issue(7)
+
+	var seen int64
+	h := OptionalUser(sess)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = UserID(r.Context())
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	// 无 cookie：放行，userID=0。
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/x", nil))
+	if rec.Code != http.StatusOK || seen != 0 {
+		t.Fatalf("anon: code=%d seen=%d", rec.Code, seen)
+	}
+
+	// 有效 cookie：放行，userID=7。
+	rec = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.AddCookie(&http.Cookie{Name: cookieName, Value: token})
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || seen != 7 {
+		t.Fatalf("authed: code=%d seen=%d", rec.Code, seen)
+	}
+
+	// 无效 token：放行，userID=0（不 401）。
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.AddCookie(&http.Cookie{Name: cookieName, Value: "bogus-token"})
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK || seen != 0 {
+		t.Fatalf("invalid token: code=%d seen=%d", rec.Code, seen)
+	}
+}
+
 func TestRequireUserInvalidToken(t *testing.T) {
 	sess := NewSession(nil)
 	called := false
