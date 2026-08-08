@@ -3,7 +3,7 @@
 面向小朋友 & 亲子的 **AI 漫画书**制作 Web 应用。
 用户建一本书，创建自己的角色与场景，用一句话 + 和 AI 聊分镜，逐格生图，最后拼成一本属于自己的漫画书——默认**宫崎骏 / 吉卜力**风格。
 
-> 48 小时面试作品。设计文档见 [`docs/superpowers/specs/2026-08-07-oh-my-commic-design.md`](docs/superpowers/specs/2026-08-07-oh-my-commic-design.md)。
+> 48 小时面试作品。**系统设计与架构（含架构图 / 数据模型 / 部署拓扑 / 设计文档索引）见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)**。
 
 ---
 
@@ -164,13 +164,16 @@ oh-my-commic/
 └── .env                 # 本地密钥(gitignored)
 ```
 
-## 📖 使用文档
+## 📚 文档
 
-图文教程（建演员表 → 讲故事拆镜 → 逐格出图 → 拼成书 → 发社区）见 [`docs/USAGE.md`](docs/USAGE.md)。
-
-## 🎬 演示脚本
-
-3 分钟面试演示走位见 [`docs/DEMO.md`](docs/DEMO.md)。
+| 文档 | 内容 |
+|---|---|
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | **系统设计与架构**：架构图 / 数据模型 ER / 核心流程时序 / 部署拓扑 / 设计文档索引 |
+| [`docs/DELIVERABLE.md`](docs/DELIVERABLE.md) | 按评审维度的**交付说明**（功能 / 工程 / 交互 / 创新 / 完成质量 五部分） |
+| [`docs/USAGE.md`](docs/USAGE.md) | **图文使用教程**（建演员表 → 讲故事拆镜 → 逐格出图 → 拼成书 → 发社区） |
+| [`docs/ARCHITECTURE-AND-PROMPTS.md`](docs/ARCHITECTURE-AND-PROMPTS.md) | 模块/文件地图 + **AI 提示词原文** |
+| [`docs/openapi.yaml`](docs/openapi.yaml) | **API 契约**（单一真相，CI 校验） |
+| [`docs/DEMO.md`](docs/DEMO.md) | 3 分钟面试演示走位 |
 
 ## 📅 状态
 
