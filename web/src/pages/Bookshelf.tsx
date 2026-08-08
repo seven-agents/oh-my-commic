@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AppHeader } from '../components/AppHeader'
-import { BookCover } from '../components/BookCover'
+import { BookCard } from '../components/BookCard'
 import { Button, EmptyState, Input, LoadingClouds, Modal } from '../components/ui'
 import { api } from '../api/client'
 import type { Book } from '../api/types'
@@ -13,6 +13,9 @@ export default function Bookshelf() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
+  const [pendingDelete, setPendingDelete] = useState<Book | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
 
   useEffect(() => {
     let alive = true
@@ -35,6 +38,32 @@ export default function Bookshelf() {
     setBooks((prev) => [book, ...prev])
     setCreateOpen(false)
     navigate(`/books/${book.id}`)
+  }
+
+  const askDelete = (book: Book) => {
+    setDeleteError('')
+    setPendingDelete(book)
+  }
+
+  const closeConfirm = () => {
+    if (deleting) return
+    setPendingDelete(null)
+    setDeleteError('')
+  }
+
+  const confirmDelete = async () => {
+    if (!pendingDelete) return
+    setDeleting(true)
+    setDeleteError('')
+    try {
+      await api.del(`/api/books/${pendingDelete.id}`)
+      setBooks((prev) => prev.filter((b) => b.id !== pendingDelete.id))
+      setPendingDelete(null)
+    } catch (err) {
+      setDeleteError(errorMessage(err))
+    } finally {
+      setDeleting(false)
+    }
   }
 
   return (
@@ -62,23 +91,46 @@ export default function Bookshelf() {
           <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
             <CreateCard onClick={() => setCreateOpen(true)} />
             {books.map((book) => (
-              <button
+              <BookCard
                 key={book.id}
-                type="button"
-                onClick={() => navigate(`/books/${book.id}`)}
-                className="group animate-pop-in text-left"
-              >
-                <div className="transition-transform duration-200 group-hover:-translate-y-1">
-                  <BookCover id={book.id} title={book.title} coverUrl={book.coverUrl} />
-                </div>
-                <p className="mt-2 truncate px-1 font-display font-semibold text-ink">{book.title}</p>
-              </button>
+                book={book}
+                onOpen={(id) => navigate(`/books/${id}`)}
+                onDelete={askDelete}
+              />
             ))}
           </div>
         )}
       </main>
 
       <CreateBookModal open={createOpen} onClose={() => setCreateOpen(false)} onCreated={onCreated} />
+
+      <Modal open={pendingDelete !== null} onClose={closeConfirm} title="要删掉这本书吗？">
+        {pendingDelete && (
+          <div className="flex flex-col gap-5">
+            <p className="text-ink-soft">
+              确定要删掉「<span className="font-bold text-ink">{pendingDelete.title}</span>
+              」吗？这本书里的角色、场景和所有章节都会一起删掉哦，删了就找不回来啦。
+            </p>
+            {deleteError && (
+              <p className="rounded-2xl bg-coral/10 px-4 py-3 text-center text-sm font-semibold text-coral">
+                {deleteError}
+              </p>
+            )}
+            <div className="flex justify-end gap-3">
+              <Button variant="ghost" onClick={closeConfirm} disabled={deleting}>
+                取消
+              </Button>
+              <Button
+                onClick={confirmDelete}
+                loading={deleting}
+                className="bg-coral text-white hover:bg-coral"
+              >
+                删除
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }
