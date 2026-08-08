@@ -52,6 +52,10 @@ jobs:
           DATA_DIR: /tmp/e2e_data
           PORT: "8080"
           WEB_DIST: web/dist
+          # 播种 admin + 放行邀请码注册（假值），E2E 才能走通注册→登录→改昵称。
+          INVITE_CODE: welcome123
+          ADMIN_USERNAME: admin
+          ADMIN_PASSWORD: Passw0rd1
         run: |
           /tmp/omc &
           echo "server_pid=$!" >> "$GITHUB_ENV"
