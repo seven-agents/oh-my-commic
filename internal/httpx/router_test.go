@@ -25,7 +25,7 @@ func newTestRouter(t *testing.T) http.Handler {
 	t.Cleanup(func() { d.Close() })
 
 	sess := auth.NewSession(nil)
-	authHandler := auth.NewHandler(auth.NewService(auth.NewUserRepo(d), sess))
+	authHandler := auth.NewHandler(auth.NewService(auth.NewUserRepo(d), sess, 100))
 	bookHandler := book.NewHandler(book.NewService(book.NewRepo(d)))
 
 	return NewRouter(Deps{
@@ -131,6 +131,58 @@ func TestBookFlow(t *testing.T) {
 	}
 	if len(books) != 1 || books[0].ID != created.ID {
 		t.Fatalf("list books: want the created book, got %+v", books)
+	}
+}
+
+// TestMeRequiresAuth verifies GET /api/me is behind RequireUser.
+func TestMeRequiresAuth(t *testing.T) {
+	srv := httptest.NewServer(newTestRouter(t))
+	defer srv.Close()
+
+	resp, err := http.Get(srv.URL + "/api/me")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("GET /api/me without session: want 401, got %d", resp.StatusCode)
+	}
+}
+
+// TestMeReturnsCredits verifies an authenticated GET /api/me returns the user's
+// credit balance (100 by default) and never leaks the password hash.
+func TestMeReturnsCredits(t *testing.T) {
+	srv := httptest.NewServer(newTestRouter(t))
+	defer srv.Close()
+
+	const creds = `{"nickname":"积分","password":"pw123456"}`
+	post(t, srv.URL+"/api/register", "", creds).Body.Close()
+	loginResp := post(t, srv.URL+"/api/login", "", creds)
+	loginResp.Body.Close()
+	cookie := sessionCookie(t, loginResp)
+
+	req, _ := http.NewRequest(http.MethodGet, srv.URL+"/api/me", nil)
+	req.Header.Set("Cookie", cookie)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GET /api/me: want 200, got %d", resp.StatusCode)
+	}
+	var u models.User
+	if err := json.NewDecoder(resp.Body).Decode(&u); err != nil {
+		t.Fatal(err)
+	}
+	if u.Nickname != "积分" {
+		t.Fatalf("me: unexpected nickname %q", u.Nickname)
+	}
+	if u.Credits != 100 {
+		t.Fatalf("me: want 100 credits, got %d", u.Credits)
+	}
+	if u.PasswordHash != "" {
+		t.Fatalf("me: password hash must never be serialized, got %q", u.PasswordHash)
 	}
 }
 

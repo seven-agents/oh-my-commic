@@ -44,6 +44,15 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/api/logout", h.Logout)
 }
 
+// MountProtected registers the auth endpoints that require an authenticated
+// session. The caller must mount these inside a group already wrapped with
+// RequireUser so h.Me can rely on a valid user ID in the request context.
+//
+//	GET /api/me
+func (h *Handler) MountProtected(r chi.Router) {
+	r.Get("/api/me", h.Me)
+}
+
 // Routes builds a chi router mounting the auth endpoints. It is separated from
 // ServeHTTP so callers can mount these routes into a larger router later.
 func (h *Handler) Routes() http.Handler {
@@ -93,6 +102,21 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	setSessionCookie(w, r, token)
+	writeJSON(w, http.StatusOK, u)
+}
+
+// Me handles GET /api/me. It returns the currently authenticated user (including
+// the live credit balance, never the password hash) resolved from the session
+// context populated by RequireUser.
+func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
+	userID := UserID(r.Context())
+	u, err := h.svc.Me(userID)
+	if err != nil {
+		// A resolved session pointing at a missing user is treated as not found
+		// rather than leaking internal detail.
+		writeError(w, http.StatusNotFound, "找不到这个内容")
+		return
+	}
 	writeJSON(w, http.StatusOK, u)
 }
 

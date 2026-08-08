@@ -23,13 +23,16 @@ var (
 // Service implements the registration and login use cases on top of a user
 // repository and a session store.
 type Service struct {
-	repo *UserRepo
-	sess *Session
+	repo          *UserRepo
+	sess          *Session
+	signupCredits int
 }
 
 // NewService wires a Service to its user repository and session store.
-func NewService(repo *UserRepo, sess *Session) *Service {
-	return &Service{repo: repo, sess: sess}
+// signupCredits is the starting image-credit balance granted to every newly
+// registered user.
+func NewService(repo *UserRepo, sess *Session, signupCredits int) *Service {
+	return &Service{repo: repo, sess: sess, signupCredits: signupCredits}
 }
 
 // Sessions exposes the underlying session store so HTTP handlers can resolve
@@ -53,9 +56,20 @@ func (s *Service) Register(nickname, password string) (models.User, error) {
 		return models.User{}, fmt.Errorf("hash password: %w", err)
 	}
 
-	u, err := s.repo.Create(nickname, string(hash))
+	u, err := s.repo.Create(nickname, string(hash), s.signupCredits)
 	if err != nil {
 		return models.User{}, fmt.Errorf("register %q: %w", nickname, err)
+	}
+	return u, nil
+}
+
+// Me returns the current user identified by userID, including the live credit
+// balance. It is used by the protected GET /api/me endpoint so the frontend can
+// display and refresh the header credit count.
+func (s *Service) Me(userID int64) (models.User, error) {
+	u, err := s.repo.ByID(userID)
+	if err != nil {
+		return models.User{}, fmt.Errorf("me %d: %w", userID, err)
 	}
 	return u, nil
 }

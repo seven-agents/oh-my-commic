@@ -27,7 +27,7 @@ func newSPATestRouter(t *testing.T, dist string) http.Handler {
 	t.Cleanup(func() { d.Close() })
 
 	sess := auth.NewSession(nil)
-	authHandler := auth.NewHandler(auth.NewService(auth.NewUserRepo(d), sess))
+	authHandler := auth.NewHandler(auth.NewService(auth.NewUserRepo(d), sess, 100))
 	bookHandler := book.NewHandler(book.NewService(book.NewRepo(d)))
 
 	spa, err := NewSPAHandler(dist)
