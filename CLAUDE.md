@@ -48,7 +48,7 @@ docker buildx build --platform linux/amd64 -t oh-my-commic:latest --load .
   - **后端**：契约 E2E（`test/contract`，`kin-openapi` 校验每个真实响应）会挡住跑偏，跑在 `go test`/CI 里；
   - **前端**：`web/src/api`（`client.ts` 路径、`types.ts` 数据结构）也以 openapi.yaml 为准，两端共用同一契约；
   - 人读概览见 `docs/frontend-api.md`（只是概览，以 openapi.yaml 为准）。
-- **前端路由**：`/` **重定向到 `/community`**（旧的两卡 `Home` 页已删除）；`AppShell` 应用壳（左栏 Logo+`🌈 社区`/`📚 我的漫画` tab+底部用户区）**包住** `/community`（公开 feed）与 `/my`（受保护书架，原在 `/`），右侧内容随 tab 切换；`/community/books/:id`=**全屏公开阅读器（不进壳）**；`/profile`、`/books/*`、`/chapters/*`、`/read/*`、`/login` 仍各自整页（沿用旧 `AppHeader`）；登录/注册成功跳 `/my`。每卡「公开/私密」开关 = `VisibilityToggle`。
+- **前端路由**：`/` **重定向到 `/community`**（旧的两卡 `Home` 页已删除）；`AppShell` 应用壳（左栏 Logo+`🌈 社区`/`📚 我的漫画` tab+底部用户区）**包住** `/community`（公开 feed）与 `/my`（受保护书架，原在 `/`），右侧内容随 tab 切换；`/community/books/:id`=**全屏公开阅读器（不进壳）**；`/profile`、`/books/*`、`/chapters/*`、`/read/*`、`/login` 仍各自整页（沿用旧 `AppHeader`）；登录/注册成功跳 `/my`。每卡「公开/私密」开关 = `VisibilityToggle`。顶栏 `AppHeader`/左栏 `SideNav` 的 Logo 均指向 `/`（→ 重定向到公开社区 `/community`）——因 `AppHeader` 会随公开阅读器（`CommunityReader` 复用 `BookReaderView`）展示给**匿名访客**，Logo 必须指向公开路由，**不可**指向受保护的 `/my`（否则匿名读者会被弹去登录）。
 - **git**：每功能一分支，完成后 `--no-ff` 合并回 main。提交信息中文 `type: 描述`。`.env`/`*.db`/`web/dist`/`node_modules` 均 gitignore，绝不入库/入镜像。
 
 ## 关键数据模型
