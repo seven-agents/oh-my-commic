@@ -1,7 +1,7 @@
 // 轻量 fetch 封装。所有业务路径已包含版本化前缀 /api/v1，base 为空字符串。
 // 始终携带 cookie（credentials: 'include'）。非 2xx 抛出带类型的 ApiError。
 
-import type { User } from './types'
+import type { User, Book, CommunityBook, CommunityBookDetail, LikeResult } from './types'
 
 export class ApiError extends Error {
   status: number
@@ -115,6 +115,28 @@ export const api = {
   // 轮换全局邀请码（仅管理员），返回新的邀请码。
   rotateInviteCode: () =>
     request<{ inviteCode: string }>('POST', '/api/v1/admin/invite-code/rotate'),
+
+  // 社区公开 feed（分页）。匿名可调。
+  listCommunity: (limit = 20, offset = 0) =>
+    request<CommunityBook[]>('GET', `/api/v1/community/books?limit=${limit}&offset=${offset}`),
+
+  // 公开阅读详情（book+chapters+panels）。匿名可调；非公开/不存在抛 404。
+  getCommunityBook: (id: number) =>
+    request<CommunityBookDetail>('GET', `/api/v1/community/books/${id}`),
+
+  // 记一次独立浏览（匿名带 clientId 去重）。
+  recordView: (id: number, clientId: string) =>
+    request<{ ok: boolean }>('POST', `/api/v1/community/books/${id}/view`, { clientId }),
+
+  // 点赞 / 取消赞（需登录）。
+  likeBook: (id: number) =>
+    request<LikeResult>('POST', `/api/v1/community/books/${id}/like`),
+  unlikeBook: (id: number) =>
+    request<LikeResult>('DELETE', `/api/v1/community/books/${id}/like`),
+
+  // owner 发布/下架整本书。
+  setVisibility: (id: number, isPublic: boolean) =>
+    request<Book>('PUT', `/api/v1/books/${id}/visibility`, { isPublic }),
 
   // multipart 上传：不要手动设置 Content-Type，交给浏览器带 boundary。
   upload: async <T>(path: string, file: File): Promise<T> => {
