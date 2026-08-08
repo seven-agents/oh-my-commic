@@ -1,15 +1,19 @@
 package auth
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 )
 
-func newTestHandler(t *testing.T) *Handler {
+// newTestHandler builds a Handler over a fresh service and returns it together
+// with the seeded invite code (required by the register endpoint).
+func newTestHandler(t *testing.T) (*Handler, string) {
 	t.Helper()
-	return NewHandler(newTestService(t))
+	svc, code := newTestService(t, 100)
+	return NewHandler(svc), code
 }
 
 func post(t *testing.T, h http.Handler, path, body string) *httptest.ResponseRecorder {
@@ -21,10 +25,18 @@ func post(t *testing.T, h http.Handler, path, body string) *httptest.ResponseRec
 	return rec
 }
 
-func TestHandlerRegisterThenLoginSetsCookie(t *testing.T) {
-	h := newTestHandler(t)
+// registerJSON builds a valid register request body for the given username.
+func registerJSON(username, code string) string {
+	return fmt.Sprintf(
+		`{"username":%q,"password":"pw123456","email":%q,"inviteCode":%q}`,
+		username, username+"@example.com", code,
+	)
+}
 
-	rec := post(t, h, "/api/v1/register", `{"nickname":"小刚","password":"pw123456"}`)
+func TestHandlerRegisterThenLoginSetsCookie(t *testing.T) {
+	h, code := newTestHandler(t)
+
+	rec := post(t, h, "/api/v1/register", registerJSON("xiaogang", code))
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("register status = %d, want 201; body=%s", rec.Code, rec.Body.String())
 	}
@@ -32,7 +44,7 @@ func TestHandlerRegisterThenLoginSetsCookie(t *testing.T) {
 		t.Fatalf("register response leaked password field: %s", rec.Body.String())
 	}
 
-	rec = post(t, h, "/api/v1/login", `{"nickname":"小刚","password":"pw123456"}`)
+	rec = post(t, h, "/api/v1/login", `{"username":"xiaogang","password":"pw123456"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("login status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 	}
@@ -57,36 +69,47 @@ func TestHandlerRegisterThenLoginSetsCookie(t *testing.T) {
 	}
 }
 
-func TestHandlerDuplicateNicknameReturns409(t *testing.T) {
-	h := newTestHandler(t)
-	_ = post(t, h, "/api/v1/register", `{"nickname":"重复","password":"pw123456"}`)
-	rec := post(t, h, "/api/v1/register", `{"nickname":"重复","password":"other"}`)
+func TestHandlerDuplicateUsernameReturns409(t *testing.T) {
+	h, code := newTestHandler(t)
+	_ = post(t, h, "/api/v1/register", registerJSON("chongfu", code))
+	// Same username, different email.
+	dup := fmt.Sprintf(
+		`{"username":"chongfu","password":"pw123456","email":"other@example.com","inviteCode":%q}`, code)
+	rec := post(t, h, "/api/v1/register", dup)
 	if rec.Code != http.StatusConflict {
-		t.Fatalf("duplicate register status = %d, want 409", rec.Code)
+		t.Fatalf("duplicate register status = %d, want 409; body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestHandlerBadInviteReturns403(t *testing.T) {
+	h, _ := newTestHandler(t)
+	rec := post(t, h, "/api/v1/register", registerJSON("badinvite", "wrong-code"))
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("bad invite status = %d, want 403; body=%s", rec.Code, rec.Body.String())
 	}
 }
 
 func TestHandlerBadCredentialsReturns401(t *testing.T) {
-	h := newTestHandler(t)
-	_ = post(t, h, "/api/v1/register", `{"nickname":"张三","password":"pw123456"}`)
-	rec := post(t, h, "/api/v1/login", `{"nickname":"张三","password":"nope"}`)
+	h, code := newTestHandler(t)
+	_ = post(t, h, "/api/v1/register", registerJSON("zhangsan", code))
+	rec := post(t, h, "/api/v1/login", `{"username":"zhangsan","password":"nope"}`)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("bad login status = %d, want 401", rec.Code)
 	}
 }
 
 func TestHandlerEmptyBodyReturns400(t *testing.T) {
-	h := newTestHandler(t)
-	rec := post(t, h, "/api/v1/register", `{"nickname":"","password":""}`)
+	h, _ := newTestHandler(t)
+	rec := post(t, h, "/api/v1/login", `{"username":"","password":""}`)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("empty body status = %d, want 400", rec.Code)
 	}
 }
 
 func TestHandlerLogoutRevokesSession(t *testing.T) {
-	h := newTestHandler(t)
-	_ = post(t, h, "/api/v1/register", `{"nickname":"登出","password":"pw123456"}`)
-	loginRec := post(t, h, "/api/v1/login", `{"nickname":"登出","password":"pw123456"}`)
+	h, code := newTestHandler(t)
+	_ = post(t, h, "/api/v1/register", registerJSON("dengchu", code))
+	loginRec := post(t, h, "/api/v1/login", `{"username":"dengchu","password":"pw123456"}`)
 
 	var token string
 	for _, c := range loginRec.Result().Cookies() {

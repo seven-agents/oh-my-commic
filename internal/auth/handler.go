@@ -12,9 +12,20 @@ import (
 // sessionCookie is the name of the cookie carrying the session token.
 const sessionCookie = "session"
 
-// credentials is the JSON body accepted by register and login.
-type credentials struct {
-	Nickname string `json:"nickname"`
+// registerBody is the JSON body accepted by register: username/password are the
+// login credentials, email is required and unique, inviteCode gates signup, and
+// nickname is an optional display name (defaults to username when blank).
+type registerBody struct {
+	Username   string `json:"username"`
+	Password   string `json:"password"`
+	Email      string `json:"email"`
+	InviteCode string `json:"inviteCode"`
+	Nickname   string `json:"nickname"`
+}
+
+// loginBody is the JSON body accepted by login.
+type loginBody struct {
+	Username string `json:"username"`
 	Password string `json:"password"`
 }
 
@@ -71,38 +82,59 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.Routes().ServeHTTP(w, r)
 }
 
-// Register handles POST /api/v1/register.
+// Register handles POST /api/v1/register. On success it sets an HttpOnly session
+// cookie (the caller is logged in immediately) and returns the user as JSON.
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
-	creds, ok := decodeCredentials(w, r)
-	if !ok {
+	var body registerBody
+	if !decodeBody(w, r, &body) {
 		return
 	}
 
-	u, err := h.svc.Register(creds.Nickname, creds.Password)
+	token, u, err := h.svc.Register(RegisterInput{
+		Username:   strings.TrimSpace(body.Username),
+		Password:   body.Password,
+		Email:      body.Email,
+		InviteCode: strings.TrimSpace(body.InviteCode),
+		Nickname:   body.Nickname,
+	})
 	if err != nil {
-		if errors.Is(err, ErrNicknameTaken) {
-			writeError(w, http.StatusConflict, "昵称已被占用")
-			return
+		switch {
+		case errors.Is(err, ErrBadInvite):
+			writeError(w, http.StatusForbidden, "邀请码不正确")
+		case errors.Is(err, ErrUsernameTaken):
+			writeError(w, http.StatusConflict, "用户名已被占用")
+		case errors.Is(err, ErrEmailTaken):
+			writeError(w, http.StatusConflict, "邮箱已注册")
+		case errors.Is(err, ErrBadUsername), errors.Is(err, ErrBadPassword),
+			errors.Is(err, ErrBadEmail), errors.Is(err, ErrBadNickname):
+			writeError(w, http.StatusBadRequest, err.Error())
+		default:
+			writeError(w, http.StatusInternalServerError, "注册失败")
 		}
-		writeError(w, http.StatusInternalServerError, "注册失败")
 		return
 	}
 
+	setSessionCookie(w, r, token)
 	writeJSON(w, http.StatusCreated, u)
 }
 
 // Login handles POST /api/v1/login. On success it sets an HttpOnly session cookie
 // and returns the user as JSON.
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
-	creds, ok := decodeCredentials(w, r)
-	if !ok {
+	var body loginBody
+	if !decodeBody(w, r, &body) {
+		return
+	}
+	username := strings.TrimSpace(body.Username)
+	if username == "" || body.Password == "" {
+		writeError(w, http.StatusBadRequest, "用户名和密码不能为空")
 		return
 	}
 
-	token, u, err := h.svc.Login(creds.Nickname, creds.Password)
+	token, u, err := h.svc.Login(username, body.Password)
 	if err != nil {
-		// Both unknown-nickname and wrong-password map here; do not distinguish.
-		writeError(w, http.StatusUnauthorized, "昵称或密码错误")
+		// Both unknown-username and wrong-password map here; do not distinguish.
+		writeError(w, http.StatusUnauthorized, "用户名或密码错误")
 		return
 	}
 
@@ -135,23 +167,17 @@ func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// decodeCredentials parses and validates the request body. On failure it writes
-// a 400 response and returns ok=false.
-func decodeCredentials(w http.ResponseWriter, r *http.Request) (credentials, bool) {
-	var c credentials
+// decodeBody parses the JSON request body into dst, rejecting unknown fields. On
+// a decode failure it writes a 400 response and returns false. Field-level
+// validation is delegated to the service layer's validators.
+func decodeBody(w http.ResponseWriter, r *http.Request, dst any) bool {
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
-	if err := dec.Decode(&c); err != nil {
+	if err := dec.Decode(dst); err != nil {
 		writeError(w, http.StatusBadRequest, "请求格式错误")
-		return credentials{}, false
+		return false
 	}
-
-	c.Nickname = strings.TrimSpace(c.Nickname)
-	if c.Nickname == "" || c.Password == "" {
-		writeError(w, http.StatusBadRequest, "昵称和密码不能为空")
-		return credentials{}, false
-	}
-	return c, true
+	return true
 }
 
 // setSessionCookie sets the HttpOnly session cookie. Secure is enabled when the
