@@ -96,6 +96,59 @@ func TestResizeForReferencePortraitPinsHeight(t *testing.T) {
 	}
 }
 
+func TestCompressForWebDownscalesLargeImage(t *testing.T) {
+	raw := makePNG(t, 2048, 2048)
+	out, mime, changed := CompressForWeb(raw, "image/png")
+
+	if !changed {
+		t.Fatal("expected oversized image to be compressed (changed=true)")
+	}
+	if mime != "image/jpeg" {
+		t.Fatalf("expected image/jpeg, got %s", mime)
+	}
+	// Note: byte-size is not asserted here — a synthetic gradient PNG is
+	// pathologically compressible, so a downscaled JPEG can be larger than the
+	// source PNG. Real 2048² photo/art shrinks dramatically; the realistic
+	// size-win is asserted in storage's handler test (JPEG source).
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(out))
+	if err != nil {
+		t.Fatalf("decode result config: %v", err)
+	}
+	if cfg.Width > maxWebDimension || cfg.Height > maxWebDimension {
+		t.Fatalf("result %dx%d exceeds cap %d", cfg.Width, cfg.Height, maxWebDimension)
+	}
+	if cfg.Width != maxWebDimension || cfg.Height != maxWebDimension {
+		t.Fatalf("square 2048 should map to %d square, got %dx%d", maxWebDimension, cfg.Width, cfg.Height)
+	}
+}
+
+func TestCompressForWebLeavesSmallImageUntouched(t *testing.T) {
+	raw := makePNG(t, 800, 600)
+	out, mime, changed := CompressForWeb(raw, "image/png")
+
+	if changed {
+		t.Fatal("small image should not be transformed (avoids PNG->JPEG alpha loss)")
+	}
+	if mime != "image/png" {
+		t.Fatalf("expected original mime image/png, got %s", mime)
+	}
+	if !bytes.Equal(out, raw) {
+		t.Fatal("small image bytes should be returned unchanged")
+	}
+}
+
+func TestCompressForWebFallsBackOnUndecodable(t *testing.T) {
+	raw := []byte("not an image")
+	out, mime, changed := CompressForWeb(raw, "image/jpeg")
+
+	if changed {
+		t.Fatal("undecodable input must not report changed")
+	}
+	if mime != "image/jpeg" || !bytes.Equal(out, raw) {
+		t.Fatal("undecodable input should fall back to original bytes+mime")
+	}
+}
+
 func TestMimeFromExt(t *testing.T) {
 	cases := map[string]string{
 		".png":  "image/png",

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/seven-agents/oh-my-commic/internal/asset"
 	"github.com/seven-agents/oh-my-commic/internal/auth"
@@ -77,6 +78,13 @@ func NewRouter(deps Deps) http.Handler {
 	// Log every request first so 404s and errors from any downstream handler
 	// (including the SPA/static catch-all) are visible in the server log.
 	r.Use(requestLogger)
+
+	// gzip text responses (JS/CSS/HTML/JSON/SVG). chi's Compress filters by
+	// Content-Type, so already-compressed images (jpeg/png/webp) are skipped —
+	// gzipping them would waste CPU for no size win. This is the single biggest
+	// win for the 250KB JS bundle (~80KB compressed); image speed comes from the
+	// long Cache-Control headers set on /media and /assets, not from gzip.
+	r.Use(middleware.Compress(5))
 
 	// Unversioned health probe (docker-compose + CI depend on this stable path).
 	r.Get("/api/health", func(w http.ResponseWriter, _ *http.Request) {

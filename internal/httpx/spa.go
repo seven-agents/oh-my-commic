@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // indexFile is the SPA entrypoint served for any client-side route that does
@@ -30,9 +31,19 @@ func NewSPAHandler(dir string) (http.Handler, error) {
 		// is not a regular file — including the root path and unknown client
 		// routes — serve the SPA shell so the frontend router can take over.
 		if servable(dir, r.URL.Path) {
+			// Vite emits hashed filenames under /assets/, so their content never
+			// changes for a given URL — cache them for a year. index.html itself
+			// must stay uncached (below) so a new build's asset hashes are picked
+			// up immediately.
+			if strings.HasPrefix(r.URL.Path, "/assets/") {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			}
 			fs.ServeHTTP(w, r)
 			return
 		}
+		// The SPA shell must never be cached: it references the current build's
+		// hashed assets, so a stale copy would load dead asset URLs after deploy.
+		w.Header().Set("Cache-Control", "no-cache")
 		http.ServeFile(w, r, index)
 	}), nil
 }
