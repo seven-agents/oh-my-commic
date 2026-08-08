@@ -31,7 +31,7 @@ type stubEditor struct {
 	calls     int
 }
 
-func (s *stubEditor) EditImage(_ context.Context, _ string, _ []string) (string, error) {
+func (s *stubEditor) SeedreamImage(_ context.Context, _ string, _ []string) (string, error) {
 	s.calls++
 	if s.err != nil {
 		return "", s.err

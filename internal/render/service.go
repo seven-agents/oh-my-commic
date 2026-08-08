@@ -51,24 +51,22 @@ const statusFailed = "failed"
 
 // defaultMaxRefs caps reference images per render when NewService is given a
 // non-positive maxRefs (defensive fallback so the model is never over-fed).
-const defaultMaxRefs = 3
+const defaultMaxRefs = 10
 
-// modelMaxRefs is the hard upper bound the multi-image edit model accepts.
-// qwen-image-edit-plus rejects a request with more than 3 image items
-// ("must contain 1~3 image content items"), so we clamp to this regardless of
-// how maxRefs is configured — over-feeding causes a 400 → render failure.
-const modelMaxRefs = 3
+// modelMaxRefs is the hard upper bound the image model accepts. Seedream 4.0
+// accepts up to 10 reference images per request, so we clamp to this regardless
+// of how maxRefs is configured — over-feeding causes a 400 → render failure.
+const modelMaxRefs = 10
 
-// ImageGenerator produces a remote image URL from a prompt. It is satisfied by
-// *ai.Client. The Service depends on this narrow interface (defined where it is
-// used) so tests can inject a fake without any real network calls.
+// ImageGenerator produces a remote image URL from a prompt plus zero or more
+// reference images. It is satisfied by *ai.Client via SeedreamImage. The Service
+// depends on this narrow interface (defined where it is used) so tests can inject
+// a fake without any real network calls.
 //
-// GenerateImage is the text2image fallback (no usable reference images).
-// RenderWithRefs is the multi-image edit path: refImageDataURIs are base64
-// data: URIs of the matched characters/scene, driving visual consistency.
+// refImageDataURIs are base64 data: URIs of the matched characters/scene driving
+// visual consistency; an empty list yields pure text-to-image.
 type ImageGenerator interface {
-	GenerateImage(ctx context.Context, prompt string, refImageURLs []string) (string, error)
-	RenderWithRefs(ctx context.Context, prompt string, refImageDataURIs []string) (string, error)
+	SeedreamImage(ctx context.Context, prompt string, refImageDataURIs []string) (string, error)
 }
 
 // Service orchestrates the render-one-panel flow.
@@ -99,7 +97,7 @@ func NewService(
 		maxRefs = defaultMaxRefs
 	}
 	if maxRefs > modelMaxRefs {
-		maxRefs = modelMaxRefs // model hard limit: never send more than 3 images
+		maxRefs = modelMaxRefs // model hard limit: never send more than 10 images
 	}
 	return &Service{
 		gen:      gen,
@@ -148,18 +146,13 @@ func (s *Service) RenderPanel(ctx context.Context, userID, panelID int64) (model
 	}
 
 	// Convert the local reference URLs into base64 data URIs the model can
-	// consume (DashScope cannot reach our /media host). Characters come first in
-	// refs, scene last, so a simple slice cap preserves character priority.
+	// consume (the image API cannot reach our /media host). Characters come first
+	// in refs, scene last, so a simple slice cap preserves character priority.
+	// Seedream handles both cases: an empty list is pure text-to-image, a
+	// non-empty list drives the render from the reference images.
 	dataURIs := s.refDataURIs(refs)
 
-	var remoteURL string
-	if len(dataURIs) > 0 {
-		remoteURL, err = s.gen.RenderWithRefs(ctx, prompt, dataURIs)
-	} else {
-		// No usable reference image: the edit endpoint requires an input image,
-		// so fall back to text2image.
-		remoteURL, err = s.gen.GenerateImage(ctx, prompt, nil)
-	}
+	remoteURL, err := s.gen.SeedreamImage(ctx, prompt, dataURIs)
 	if err != nil {
 		s.markFailed(userID, panelID)
 		return models.Panel{}, fmt.Errorf("render panel %d: generate image: %w", panelID, err)
@@ -193,7 +186,7 @@ func (s *Service) markFailed(userID, panelID int64) {
 }
 
 // refDataURIs reads each local reference URL, downscales it, and encodes it as a
-// base64 data URI suitable for the multi-image edit model. A reference that
+// base64 data URI suitable for the Seedream image model. A reference that
 // cannot be read is skipped (logged, not fatal) so one bad asset never aborts
 // the whole render. The result is capped at s.maxRefs, preserving input order
 // (characters first, scene last) so character consistency is prioritized.

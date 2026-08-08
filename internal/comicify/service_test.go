@@ -44,7 +44,7 @@ type fakeEditor struct {
 	gotRefs   []string
 }
 
-func (f *fakeEditor) EditImage(_ context.Context, prompt string, refs []string) (string, error) {
+func (f *fakeEditor) SeedreamImage(_ context.Context, prompt string, refs []string) (string, error) {
 	f.gotPrompt = prompt
 	f.gotRefs = refs
 	return f.remoteURL, nil

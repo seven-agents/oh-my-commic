@@ -9,10 +9,10 @@ import (
 )
 
 // maxPanelRefs is the hard per-panel reference cap: characters + (scene?1:0).
-// It mirrors the render layer's multi-image edit limit (qwen-image-edit-plus
-// accepts 1~3 image items), so a panel can never demand more references than the
+// It mirrors the render layer's image-model limit (Seedream 4.0 accepts up to
+// 10 reference images), so a panel can never demand more references than the
 // image model can consume. Enforced server-side as defense-in-depth.
-const maxPanelRefs = 3
+const maxPanelRefs = 10
 
 // flexID is an int64 that tolerates the model emitting an id as EITHER a JSON
 // number (1) or a JSON string ("1"). LLMs are inconsistent about this and a
@@ -115,8 +115,8 @@ func parseStoryboardResult(content string) (StoryboardResult, error) {
 // sanitizePanels validates and trims each panel against the book's real assets:
 //   - character refs whose id is not a real character are dropped;
 //   - a sceneId that is not a real scene is reset to 0;
-//   - the ≤3 total-references rule is enforced, characters first (if there are
-//     already 3+ characters the scene is dropped; characters are capped at 3).
+//   - the ≤10 total-references rule is enforced, characters first (if there are
+//     already 10+ characters the scene is dropped; characters are capped at 10).
 //
 // Expressions survive only for the characters that are kept.
 func sanitizePanels(panels []PanelDraftV2, assets AssetContext) []PanelDraftV2 {
@@ -136,7 +136,7 @@ func sanitizePanels(panels []PanelDraftV2, assets AssetContext) []PanelDraftV2 {
 	return out
 }
 
-// sanitizePanel applies the asset-validity and ≤3-reference rules to one panel.
+// sanitizePanel applies the asset-validity and ≤10-reference rules to one panel.
 func sanitizePanel(p PanelDraftV2, validChars, validScenes map[int64]struct{}) PanelDraftV2 {
 	// Keep only characters that reference a real character id.
 	chars := make([]CharacterRef, 0, len(p.Characters))
@@ -152,7 +152,7 @@ func sanitizePanel(p PanelDraftV2, validChars, validScenes map[int64]struct{}) P
 		scene = 0
 	}
 
-	// Enforce ≤3 total references, characters first. Cap characters at 3; if
+	// Enforce ≤10 total references, characters first. Cap characters at 10; if
 	// characters already fill the budget, drop the scene.
 	if len(chars) >= maxPanelRefs {
 		chars = chars[:maxPanelRefs]

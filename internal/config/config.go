@@ -9,26 +9,29 @@ import (
 
 // Config holds all runtime configuration for the oh-my-commic server.
 type Config struct {
-	Port         string
-	DBPath       string
-	DataDir      string
+	Port    string
+	DBPath  string
+	DataDir string
+
+	// DashScope text (Qwen chat / storyboard) config.
 	DashScopeKey string
 	TextModel    string
-	ImageModel   string
-	EditModel    string
-	RenderModel  string
 	TextBaseURL  string
-	ImageBaseURL string
 
-	// RenderMaxRefs caps how many reference images are forwarded to the
-	// multi-image edit model when rendering a panel.
+	// Volcano Ark Seedream 4.0 image-generation config.
+	ArkKey          string
+	SeedreamModel   string
+	SeedreamBaseURL string
+
+	// RenderMaxRefs caps how many reference images are forwarded to the image
+	// model when rendering a panel.
 	RenderMaxRefs int
 }
 
 // defaultRenderMaxRefs is the fallback cap on reference images per render.
-// The multi-image edit model (qwen-image-edit-plus) accepts at most 3 image
-// items per request, so the default must not exceed 3.
-const defaultRenderMaxRefs = 3
+// Seedream 4.0 accepts up to 10 reference images per request, so the default
+// matches that ceiling.
+const defaultRenderMaxRefs = 10
 
 // getInt returns the integer value of env var k, or def when unset/empty or not
 // a positive integer (a safe fallback so a bad env value never breaks startup).
@@ -53,7 +56,8 @@ func get(k, def string) string {
 }
 
 // Load reads configuration from the environment, applying defaults.
-// It returns an error when the required DASHSCOPE_API_KEY is not set.
+// It returns an error when a required API key (DASHSCOPE_API_KEY for text,
+// ARK_API_KEY for Seedream images) is not set.
 func Load() (Config, error) {
 	c := Config{
 		Port:         get("PORT", "8080"),
@@ -61,16 +65,29 @@ func Load() (Config, error) {
 		DataDir:      get("DATA_DIR", "data"),
 		DashScopeKey: os.Getenv("DASHSCOPE_API_KEY"),
 		TextModel:    get("QWEN_TEXT_MODEL", "qwen-plus"),
-		ImageModel:   get("QWEN_IMAGE_MODEL", "wan2.2-t2i-plus"),
-		EditModel:    get("QWEN_EDIT_MODEL", "qwen-image-edit"),
-		RenderModel:  get("QWEN_RENDER_MODEL", "qwen-image-edit-plus"),
 		TextBaseURL:  get("QWEN_TEXT_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),
-		ImageBaseURL: get("QWEN_IMAGE_BASE_URL", "https://dashscope.aliyuncs.com/api/v1"),
 
-		RenderMaxRefs: getInt("QWEN_RENDER_MAX_REFS", defaultRenderMaxRefs),
+		ArkKey:          os.Getenv("ARK_API_KEY"),
+		SeedreamModel:   get("SEEDREAM_MODEL", "doubao-seedream-4-0-250828"),
+		SeedreamBaseURL: get("SEEDREAM_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"),
+
+		RenderMaxRefs: renderMaxRefs(),
 	}
 	if c.DashScopeKey == "" {
 		return c, errors.New("DASHSCOPE_API_KEY 未设置")
 	}
+	if c.ArkKey == "" {
+		return c, errors.New("ARK_API_KEY 未设置")
+	}
 	return c, nil
+}
+
+// renderMaxRefs resolves the reference-image cap, preferring the new
+// RENDER_MAX_REFS env var and falling back to the legacy QWEN_RENDER_MAX_REFS
+// for backward compatibility, then the default.
+func renderMaxRefs() int {
+	if v := os.Getenv("RENDER_MAX_REFS"); v != "" {
+		return getInt("RENDER_MAX_REFS", defaultRenderMaxRefs)
+	}
+	return getInt("QWEN_RENDER_MAX_REFS", defaultRenderMaxRefs)
 }

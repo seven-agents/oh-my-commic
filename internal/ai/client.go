@@ -4,23 +4,23 @@ package ai
 
 import (
 	"net/http"
-	"time"
 )
 
-// Client talks to DashScope's OpenAI-compatible API. The zero-value HTTP field
-// falls back to http.DefaultClient at request time.
+// Client talks to DashScope's OpenAI-compatible API (text) and Volcano Ark's
+// Seedream image API (images). The zero-value HTTP field falls back to
+// http.DefaultClient at request time.
 type Client struct {
-	Key          string
-	TextBaseURL  string
-	ImageBaseURL string
-	TextModel    string
-	ImageModel   string
-	EditModel    string
-	RenderModel  string
-	HTTP         *http.Client
+	// DashScope text (Qwen chat) config.
+	Key         string
+	TextBaseURL string
+	TextModel   string
 
-	// PollInterval controls polling cadence for async image tasks (Task 7.1).
-	PollInterval time.Duration
+	// Volcano Ark Seedream 4.0 image config.
+	ArkKey          string
+	SeedreamModel   string
+	SeedreamBaseURL string
+
+	HTTP *http.Client
 }
 
 // httpClient returns the configured client or the shared default.

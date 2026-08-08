@@ -2,7 +2,7 @@
 // Miyazaki storybook-style reference image via an image-edit model.
 //
 // The flow for both characters and scenes is: read the local upload → encode it
-// as a base64 data URI (DashScope cannot reach a localhost /media URL) → build a
+// as a base64 data URI (the image API cannot reach a localhost /media URL) → build a
 // style + metadata prompt → call the image editor → download the produced image
 // (size-capped, ctx-aware) → store it under the same book → return the new local
 // /media URL. The returned URL replaces the asset's imageUrl and becomes the
@@ -26,10 +26,10 @@ import (
 const maxDownloadBytes = 15 << 20
 
 // ImageEditor redraws reference images into a new stylized image and returns its
-// URL. It is satisfied by *ai.Client. Defined here (where it is used) so tests
-// can inject a fake without any real network calls.
+// URL. It is satisfied by *ai.Client via SeedreamImage. Defined here (where it is
+// used) so tests can inject a fake without any real network calls.
 type ImageEditor interface {
-	EditImage(ctx context.Context, prompt string, refImageDataURIs []string) (string, error)
+	SeedreamImage(ctx context.Context, prompt string, refImageDataURIs []string) (string, error)
 }
 
 // Service orchestrates the comic-ification of an uploaded asset image.
@@ -64,14 +64,14 @@ func (s *Service) run(ctx context.Context, bookID int64, srcURL, prompt string) 
 		return "", fmt.Errorf("comicify: read source: %w", err)
 	}
 
-	// Downscale the reference before base64/EditImage: a full-resolution upload
+	// Downscale the reference before base64/SeedreamImage: a full-resolution upload
 	// makes the edit request slow enough to time out. The model output stays
 	// full-resolution; only this input reference is shrunk. A decode failure
 	// falls back to the original bytes so a resize hiccup never fails comicify.
 	refBytes, refMime := imageutil.ResizeForReference(rawBytes, imageutil.MimeFromExt(ext))
 	dataURI := "data:" + refMime + ";base64," + base64.StdEncoding.EncodeToString(refBytes)
 
-	remoteURL, err := s.editor.EditImage(ctx, prompt, []string{dataURI})
+	remoteURL, err := s.editor.SeedreamImage(ctx, prompt, []string{dataURI})
 	if err != nil {
 		return "", fmt.Errorf("comicify: edit image: %w", err)
 	}

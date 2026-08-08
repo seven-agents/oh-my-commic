@@ -51,7 +51,7 @@ func assetList(assets AssetContext) string {
 // storyboard turn. The model must reply once with a JSON OBJECT carrying a warm
 // one-line reply plus the full structured storyboard (every panel: location,
 // characters with expressions, event). Asset ids constrain what may be
-// referenced, and the ≤3-refs-per-panel rule is stated so the model self-limits
+// referenced, and the ≤10-refs-per-panel rule is stated so the model self-limits
 // (the server re-validates regardless).
 func storyboardChatPrompt(assets AssetContext, panelCount int) string {
 	return tonePrompt + "\n\n" + assetList(assets) +
@@ -72,7 +72,7 @@ func storyboardChatPrompt(assets AssetContext, panelCount int) string {
 		"}\n" +
 		"规则：\n" +
 		"- 每一格分镜都必须有 地点、人物(每个都带表情)、事件；\n" +
-		"- 每格出场角色数 + (有场景则 1，否则 0) ≤ 3；角色优先；\n" +
+		"- 每格出场角色数 + (有场景则 1，否则 0) ≤ 10；角色优先；\n" +
 		"- characters[].id 和 sceneId 只能引用上面列出的 id，不要编造；\n" +
 		"- imagePrompt 用英文，需包含地点、每个出场角色及其表情、事件，吉卜力/宫崎骏风格；\n" +
 		"- 只输出这个 JSON 对象本身。"
