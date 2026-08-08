@@ -114,14 +114,14 @@ func processPanelPrompt(assets AssetContext) string {
 		"  \"characters\": [ { \"id\": 角色 id, \"expression\": \"该角色的表情/神态\" } ],\n" +
 		"  \"event\": \"事件（中文，画面里正在发生什么）\",\n" +
 		"  \"caption\": \"中文旁白/台词，简短温暖\",\n" +
-		"  \"imagePrompt\": \"英文绘图提示词\"\n" +
+		"  \"imagePrompt\": \"中文绘图提示词\"\n" +
 		"}\n" +
 		"规则：\n" +
 		"- 只解析用户给的这一格，不要输出多格；\n" +
 		"- 这一格必须有 地点、人物(每个都带表情)、事件；\n" +
 		"- 每格出场角色数 + (有场景则 1，否则 0) ≤ 10；角色优先；\n" +
 		"- characters[].id 和 sceneId 只能引用上面列出的 id，不要编造；\n" +
-		"- imagePrompt 用英文，需包含地点、每个出场角色及其表情、事件，吉卜力/宫崎骏风格；\n" +
+		"- imagePrompt 用中文，需包含地点、每个出场角色及其表情、事件，吉卜力/宫崎骏风格；\n" +
 		"- 只输出这个 JSON 对象本身。"
 }
 

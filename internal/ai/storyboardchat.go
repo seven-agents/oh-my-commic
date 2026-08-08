@@ -52,7 +52,8 @@ type CharacterRef struct {
 
 // PanelDraftV2 is one structured storyboard frame proposed by the model: a
 // setting (Location + optional SceneID), the present characters with their
-// expressions, the event, a Chinese caption, and an English image prompt.
+// expressions, the event, a Chinese caption, and a Chinese image prompt (the
+// image model, Volcano Seedream, is a Chinese model and takes Chinese prompts).
 type PanelDraftV2 struct {
 	Location    string         `json:"location"`
 	SceneID     flexID         `json:"sceneId"`
