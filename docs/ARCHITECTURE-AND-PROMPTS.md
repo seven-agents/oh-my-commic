@@ -45,10 +45,15 @@
 | 组件/页面 | 职责 |
 |---|---|
 | `pages/Login` | 登录/注册 |
-| `pages/Home` | 公开首页（两入口卡：社区 / 我的漫画）|
-| `pages/Community` | 社区 feed（公开，无需登录）|
-| `pages/CommunityReader` | 公开阅读器（公开阅读详情，复用 `BookReaderView`）|
-| `pages/Bookshelf` | 书架（`/my`，受保护；阅读/编辑/删除按钮，创建卡在最后；每卡公开/私密开关）|
+| `components/shell/AppShell` | 应用壳：左栏 `SideNav`+右侧 `<Outlet/>`（随 tab 切换）；包住 `/community` 与 `/my`；响应式（桌面左右分栏、窄屏顶部横排）|
+| `components/shell/SideNav` | 左栏导航：Logo + `🌈 社区`/`📚 我的漫画` 两个 NavLink tab + 底部用户区 `SideNavUser` |
+| `components/shell/SideNavUser` | 侧栏底部用户区（用户展示 + 入口）|
+| `pages/CommunityView` | 社区内容区（`/community`，公开）：`HeroBanner` + 精选 `FeaturedRow` + `SortToggle` + `CommunityCard` 网格 + 空态 |
+| `pages/MyBooksView` | 书架内容区（`/my`，受保护，从 `Bookshelf` 抽出去顶栏；阅读/编辑/删除按钮，创建卡在最后；每卡公开/私密开关）|
+| `pages/CommunityReader` | 全屏公开阅读器（`/community/books/:id`，不进壳；复用 `BookReaderView`）|
+| ~~`pages/Home`~~ | 已删除（旧两卡公开首页；`/` 改为重定向到 `/community`）|
+| ~~`pages/Community`~~ | 已并入 `CommunityView` |
+| ~~`pages/Bookshelf`~~ | 已并入 `MyBooksView` |
 | `pages/BookWorkspace` | 演员表 + 章节列表(封面卡 + 第一章…) |
 | `pages/AssetEditor` | 角色/场景 上传 + 设定（保存时触发 comicify）|
 | `pages/ChapterEditor` | 分镜编辑器（分阶段：讲故事→解析出图→拼成书）|
@@ -58,6 +63,9 @@
 | `components/PanelGrid`/`PanelCard` | 出图阶段（**并发全部生成**；卡默认收起编辑、按需展开）|
 | `components/ComicCompose`/`ComicPage` | 拼版 |
 | `components/chapter/panelStage` | `canRenderPanel`（未解析禁止出图）|
+| `components/community/HeroBanner` | 社区欢迎横幅 |
+| `components/community/SortToggle` | 排序切换（最新 `new` / 最热 `hot`）|
+| `components/community/FeaturedRow` | 精选行（最热 3 本）|
 | `components/CommunityCard` | 社区 feed 单卡（封面 + 作者 nickname/avatar + 点赞/浏览数）|
 | `components/reader/BookReaderView` | 从 `BookReader` 抽出的**展示层**，owner 私有阅读与社区公开阅读共用 |
 

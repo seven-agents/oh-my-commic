@@ -42,7 +42,7 @@
 - **分镜**：`GET|PUT /api/v1/chapters/{id}/panels`（PUT 整章替换，后端重排 order）、`PUT /api/v1/panels/{id}`
 - **AI**：`POST /api/v1/chapters/{id}/storyboard-chat`（第 1 段对话拆镜）、`POST /api/v1/panels/{id}/process`（第 2 段解析）、`POST /api/v1/panels/{id}/render`（同步生图，消耗积分）
 - **社区（公开只读，走 `OptionalUser`，非公开/不存在一律 404）**：
-  - `GET /api/v1/community/books`：**公开 feed 列表**，分页 `limit`（≤50，缺省 20）+ `offset`；无需登录；只含公开书，作者仅 `nickname`/`avatarUrl`。
+  - `GET /api/v1/community/books`：**公开 feed 列表**，分页 `limit`（≤50，缺省 20）+ `offset`；可选排序 `sort`（`new`=按发布时间降序，缺省；`hot`=按点赞降序；白名单，未知回落 `new`；以 openapi.yaml 为准）；无需登录；只含公开书，作者仅 `nickname`/`avatarUrl`。
   - `GET /api/v1/community/books/{id}`：**公开阅读详情**，无需登录；严格 `is_public` 过滤，非公开/不存在 **404**；**不含**章节 `conversation`/`panelCount`。
   - `POST /api/v1/community/books/{id}/view`：**记独立浏览**（登录=`u:{id}` / 匿名=`anon:{clientId}` 去重），无需登录。
   - `POST /api/v1/community/books/{id}/like`：**点赞**，**需登录**（未登录 401）；PK 去重幂等。
