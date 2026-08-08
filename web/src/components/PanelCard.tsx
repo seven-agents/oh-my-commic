@@ -7,13 +7,22 @@ import { type AssetIndex, resolveActors, resolveScene } from './chapter/assetLoo
 type PanelCardProps = {
   panel: Panel
   index: AssetIndex
+  // 是否已解析（结构字段就绪）；未解析时禁止出图。
+  canRender: boolean
   onSaveCaption: (caption: string) => void
   onRemoveActor: (actorId: number) => void
   onRender: () => void
 }
 
 // Stage ② 单张分镜卡片：可编辑字幕、增删角色 chip、逐格生图。
-export function PanelCard({ panel, index, onSaveCaption, onRemoveActor, onRender }: PanelCardProps) {
+export function PanelCard({
+  panel,
+  index,
+  canRender,
+  onSaveCaption,
+  onRemoveActor,
+  onRender,
+}: PanelCardProps) {
   const [caption, setCaption] = useState(panel.caption)
   const actors = resolveActors(panel.characterIds, index)
   const scene = resolveScene(panel.sceneId, index)
@@ -32,7 +41,7 @@ export function PanelCard({ panel, index, onSaveCaption, onRemoveActor, onRender
         <span className="font-display text-sm font-semibold text-ink-soft">第 {panel.order + 1} 格</span>
       </div>
 
-      <PanelImage panel={panel} onRender={onRender} />
+      <PanelImage panel={panel} canRender={canRender} onRender={onRender} />
 
       {panel.location && (
         <p className="px-1 text-xs font-semibold text-ink-soft">📍 {panel.location}</p>
@@ -79,7 +88,15 @@ export function PanelCard({ panel, index, onSaveCaption, onRemoveActor, onRender
   )
 }
 
-function PanelImage({ panel, onRender }: { panel: Panel; onRender: () => void }) {
+function PanelImage({
+  panel,
+  canRender,
+  onRender,
+}: {
+  panel: Panel
+  canRender: boolean
+  onRender: () => void
+}) {
   const src = mediaUrl(panel.imageUrl)
 
   if (panel.status === 'rendering') {
@@ -119,7 +136,18 @@ function PanelImage({ panel, onRender }: { panel: Panel; onRender: () => void })
     )
   }
 
-  // pending
+  // pending：未解析的格禁止出图，给出提示。
+  if (!canRender) {
+    return (
+      <div className="flex aspect-[4/3] flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed border-ink/10 bg-cream/40 px-4 text-center">
+        <span className="text-2xl" aria-hidden>
+          ✨
+        </span>
+        <p className="text-sm font-semibold text-ink-soft">先点「解析这格」再生成图哦</p>
+      </div>
+    )
+  }
+
   return (
     <div className="flex aspect-[4/3] flex-col items-center justify-center gap-2 rounded-3xl border-2 border-dashed border-ink/10 bg-cream/40">
       <Button onClick={onRender} className="text-sm">

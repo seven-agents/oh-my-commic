@@ -1,4 +1,4 @@
-// 三步走导航条：① 讲故事 ② 画分镜 ③ 拼成书。
+// 三步走导航条：① 讲故事 ② 逐格出图 ③ 拼成书。
 // 已完成的步骤可点击回退；未解锁的步骤不可点。
 
 export type Stage = 1 | 2 | 3
@@ -7,7 +7,7 @@ type Step = { stage: Stage; emoji: string; label: string }
 
 const STEPS: Step[] = [
   { stage: 1, emoji: '💬', label: '讲故事' },
-  { stage: 2, emoji: '🎬', label: '画分镜' },
+  { stage: 2, emoji: '🎬', label: '逐格出图' },
   { stage: 3, emoji: '📚', label: '拼成书' },
 ]
 
