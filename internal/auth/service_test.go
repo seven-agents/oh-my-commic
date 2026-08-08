@@ -18,7 +18,37 @@ func newTestService(t *testing.T) *Service {
 	}
 	t.Cleanup(func() { d.Close() })
 
-	return NewService(NewUserRepo(d), NewSession(nil))
+	return NewService(NewUserRepo(d), NewSession(nil), 100)
+}
+
+// TestRegisterGrantsSignupCredits verifies a newly registered user starts with
+// the configured signup credit balance, and Me returns the live balance.
+func TestRegisterGrantsSignupCredits(t *testing.T) {
+	d, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { d.Close() })
+
+	svc := NewService(NewUserRepo(d), NewSession(nil), 42)
+	u, err := svc.Register("新用户", "pw123456")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u.Credits != 42 {
+		t.Fatalf("register should grant 42 credits, got %d", u.Credits)
+	}
+
+	me, err := svc.Me(u.ID)
+	if err != nil {
+		t.Fatalf("me: %v", err)
+	}
+	if me.ID != u.ID {
+		t.Fatalf("me should return the same user id %d, got %d", u.ID, me.ID)
+	}
+	if me.Credits != 42 {
+		t.Fatalf("me should report 42 credits, got %d", me.Credits)
+	}
 }
 
 func TestRegisterLogin(t *testing.T) {

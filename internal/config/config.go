@@ -26,7 +26,20 @@ type Config struct {
 	// RenderMaxRefs caps how many reference images are forwarded to the image
 	// model when rendering a panel.
 	RenderMaxRefs int
+
+	// SignupCredits is the starting image-credit balance granted to a newly
+	// registered user (env SIGNUP_CREDITS, default 100).
+	SignupCredits int
+	// ImageCreditCost is how many credits a single image call (panel render or
+	// asset comicify) charges up front (env IMAGE_CREDIT_COST, default 1).
+	ImageCreditCost int
 }
+
+// defaultSignupCredits is the starting balance granted at registration.
+const defaultSignupCredits = 100
+
+// defaultImageCreditCost is the credit cost of a single image generation.
+const defaultImageCreditCost = 1
 
 // defaultRenderMaxRefs is the fallback cap on reference images per render.
 // Seedream 4.0 accepts up to 10 reference images per request, so the default
@@ -72,6 +85,9 @@ func Load() (Config, error) {
 		SeedreamBaseURL: get("SEEDREAM_BASE_URL", "https://ark.cn-beijing.volces.com/api/v3"),
 
 		RenderMaxRefs: renderMaxRefs(),
+
+		SignupCredits:   getInt("SIGNUP_CREDITS", defaultSignupCredits),
+		ImageCreditCost: getInt("IMAGE_CREDIT_COST", defaultImageCreditCost),
 	}
 	if c.DashScopeKey == "" {
 		return c, errors.New("DASHSCOPE_API_KEY 未设置")

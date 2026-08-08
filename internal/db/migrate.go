@@ -98,6 +98,7 @@ var alterStatements = []string{
 	`ALTER TABLE panels ADD COLUMN content TEXT NOT NULL DEFAULT ''`,
 	`ALTER TABLE chapters ADD COLUMN conversation TEXT NOT NULL DEFAULT '[]'`,
 	`ALTER TABLE chapters ADD COLUMN panel_count INTEGER NOT NULL DEFAULT 6`,
+	`ALTER TABLE users ADD COLUMN credits INTEGER NOT NULL DEFAULT 100`,
 }
 
 // Migrate creates all application tables if they do not already exist, then

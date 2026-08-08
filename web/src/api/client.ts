@@ -1,6 +1,8 @@
 // 轻量 fetch 封装。所有路径已包含 /api 前缀，base 为空字符串。
 // 始终携带 cookie（credentials: 'include'）。非 2xx 抛出带类型的 ApiError。
 
+import type { User } from './types'
+
 export class ApiError extends Error {
   status: number
   constructor(status: number, message: string) {
@@ -35,6 +37,8 @@ function defaultMessage(status: number): string {
       return '请求有点小问题，检查一下再试试～'
     case 401:
       return '需要先登录哦'
+    case 402:
+      return '积分不足啦，画不了新图咯～'
     case 404:
       return '找不到这个内容'
     case 502:
@@ -75,6 +79,9 @@ export const api = {
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
   del: <T>(path: string) => request<T>('DELETE', path),
+
+  // 拉取当前登录用户（含最新积分余额），用于登录后 / 出图 / 漫画化后刷新 header。
+  getMe: () => request<User>('GET', '/api/me'),
 
   // multipart 上传：不要手动设置 Content-Type，交给浏览器带 boundary。
   upload: async <T>(path: string, file: File): Promise<T> => {

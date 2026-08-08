@@ -75,6 +75,7 @@ func NewRouter(deps Deps) http.Handler {
 	// Protected book routes: everything in this group requires a valid session.
 	r.Group(func(pr chi.Router) {
 		pr.Use(auth.RequireUser(deps.Session))
+		deps.Auth.MountProtected(pr)
 		deps.Book.Mount(pr)
 		if deps.Asset != nil {
 			deps.Asset.Mount(pr)

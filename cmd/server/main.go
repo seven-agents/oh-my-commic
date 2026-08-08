@@ -44,7 +44,9 @@ func main() {
 	media := storage.Local{Root: cfg.DataDir}
 	sess := auth.NewSession(d)
 
-	authSvc := auth.NewService(auth.NewUserRepo(d), sess)
+	// userRepo doubles as the render/comicify credit ledger (Spend/Refund).
+	userRepo := auth.NewUserRepo(d)
+	authSvc := auth.NewService(userRepo, sess, cfg.SignupCredits)
 	authHandler := auth.NewHandler(authSvc)
 
 	bookRepo := book.NewRepo(d)
@@ -67,7 +69,7 @@ func main() {
 
 	// Comic-ification downloads the produced image from a remote URL and can take
 	// 15-30s per asset; give it a generous, independent timeout.
-	comicSvc := comicify.NewService(aiClient, media, &http.Client{Timeout: 120 * time.Second})
+	comicSvc := comicify.NewService(aiClient, userRepo, cfg.ImageCreditCost, media, &http.Client{Timeout: 120 * time.Second})
 
 	assetSvc := asset.NewService(asset.NewRepo(d), bookRepo)
 	assetHandler := asset.NewHandler(assetSvc, media, comicSvc)
@@ -84,7 +86,8 @@ func main() {
 	// The render flow downloads the generated image from a remote URL; give it a
 	// generous timeout independent of the AI client's request timeout.
 	renderSvc := render.NewService(
-		aiClient, panelSvc, chapterSvc, assetSvc, bookRepo, media,
+		aiClient, panelSvc, chapterSvc, assetSvc, bookRepo,
+		userRepo, cfg.ImageCreditCost, media,
 		&http.Client{Timeout: 120 * time.Second},
 		cfg.RenderMaxRefs,
 	)

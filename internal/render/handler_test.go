@@ -83,6 +83,30 @@ func TestRenderHandlerBadID400(t *testing.T) {
 	}
 }
 
+// TestRenderHandlerInsufficientCredits402 verifies an empty balance surfaces as
+// a 402 Payment Required with a friendly message and never calls the generator.
+func TestRenderHandlerInsufficientCredits402(t *testing.T) {
+	env := newRenderTestEnv(t)
+	env.ledger.balance = 0
+	sp := env.seedPanel(t, 1)
+	srv := mount(env, 1)
+
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/panels/"+strconv.FormatInt(sp.panelID, 10)+"/render", nil)
+	w := httptest.NewRecorder()
+	srv.ServeHTTP(w, req)
+
+	if w.Code != http.StatusPaymentRequired {
+		t.Fatalf("insufficient credits should 402, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "积分不足") {
+		t.Fatalf("body should carry a friendly credit message, got %s", w.Body.String())
+	}
+	if env.gen.count() != 0 {
+		t.Fatalf("generator must not run on 402, calls=%d", env.gen.count())
+	}
+}
+
 // TestRenderHandlerGenError502 verifies a generation failure surfaces as a
 // generic 502 that leaks neither the API key nor upstream detail.
 func TestRenderHandlerGenError502(t *testing.T) {

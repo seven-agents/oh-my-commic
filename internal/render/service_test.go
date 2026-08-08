@@ -79,12 +79,52 @@ func (g *fakeGen) count() int {
 	return g.calls
 }
 
+// fakeLedger is a race-safe in-memory CreditLedger. balance is the starting
+// credit balance; spendErr forces Spend to error. It records how many times
+// Spend and Refund were called so tests can assert charge/refund behavior.
+type fakeLedger struct {
+	mu       sync.Mutex
+	balance  int
+	spendErr error
+	spends   int
+	refunds  int
+}
+
+func (l *fakeLedger) Spend(_ int64, cost int) (bool, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.spends++
+	if l.spendErr != nil {
+		return false, l.spendErr
+	}
+	if l.balance < cost {
+		return false, nil
+	}
+	l.balance -= cost
+	return true, nil
+}
+
+func (l *fakeLedger) Refund(_ int64, amount int) error {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.refunds++
+	l.balance += amount
+	return nil
+}
+
+func (l *fakeLedger) snapshot() (balance, spends, refunds int) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.balance, l.spends, l.refunds
+}
+
 // renderTestEnv bundles a render.Service wired to real asset/chapter/panel
 // services over an in-memory DB, a fake image generator, and an httptest image
 // server serving PNG bytes.
 type renderTestEnv struct {
 	svc      *Service
 	gen      *fakeGen
+	ledger   *fakeLedger
 	panels   *panel.Service
 	chapters *chapter.Service
 	assets   *asset.Service
@@ -120,11 +160,13 @@ func newRenderTestEnv(t *testing.T) *renderTestEnv {
 	store := storage.Local{Root: t.TempDir()}
 
 	gen := &fakeGen{url: imgSrv.URL + "/image.png"}
-	svc := NewService(gen, panelSvc, chapterSvc, assetSvc, bookRepo, store, imgSrv.Client(), 4)
+	ledger := &fakeLedger{balance: 100}
+	svc := NewService(gen, panelSvc, chapterSvc, assetSvc, bookRepo, ledger, 1, store, imgSrv.Client(), 4)
 
 	return &renderTestEnv{
 		svc:      svc,
 		gen:      gen,
+		ledger:   ledger,
 		panels:   panelSvc,
 		chapters: chapterSvc,
 		assets:   assetSvc,
@@ -378,7 +420,7 @@ func TestRenderPanelNoRefsUsesText2Image(t *testing.T) {
 func TestRenderPanelCapsRefs(t *testing.T) {
 	env := newRenderTestEnv(t)
 	// Rebuild the service with a tight cap of 2 references.
-	env.svc = NewService(env.gen, env.panels, env.chapters, env.assets, env.books, env.store, env.imgSrv.Client(), 2)
+	env.svc = NewService(env.gen, env.panels, env.chapters, env.assets, env.books, env.ledger, 1, env.store, env.imgSrv.Client(), 2)
 
 	b, err := env.books.Create(1, "书", "ghibli", "")
 	if err != nil {
@@ -495,5 +537,80 @@ func TestRenderPanelUnknown(t *testing.T) {
 	env := newRenderTestEnv(t)
 	if _, err := env.svc.RenderPanel(context.Background(), 1, 999); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("unknown panel render should return ErrNotFound, got %v", err)
+	}
+}
+
+// TestRenderPanelChargesOnSuccess verifies a successful render deducts exactly
+// one credit and never refunds.
+func TestRenderPanelChargesOnSuccess(t *testing.T) {
+	env := newRenderTestEnv(t)
+	sp := env.seedPanel(t, 1)
+
+	if _, err := env.svc.RenderPanel(context.Background(), 1, sp.panelID); err != nil {
+		t.Fatalf("render panel: %v", err)
+	}
+	balance, spends, refunds := env.ledger.snapshot()
+	if spends != 1 || refunds != 0 {
+		t.Fatalf("success should spend once and not refund, spends=%d refunds=%d", spends, refunds)
+	}
+	if balance != 99 {
+		t.Fatalf("balance should drop by 1 to 99, got %d", balance)
+	}
+}
+
+// TestRenderPanelInsufficientCreditsRejects verifies a zero balance rejects the
+// render with ErrInsufficientCredits and never calls the image generator.
+func TestRenderPanelInsufficientCreditsRejects(t *testing.T) {
+	env := newRenderTestEnv(t)
+	env.ledger.balance = 0
+	sp := env.seedPanel(t, 1)
+
+	_, err := env.svc.RenderPanel(context.Background(), 1, sp.panelID)
+	if !errors.Is(err, ErrInsufficientCredits) {
+		t.Fatalf("insufficient balance should return ErrInsufficientCredits, got %v", err)
+	}
+	if env.gen.count() != 0 {
+		t.Fatalf("generator must not be called when credits are insufficient, calls=%d", env.gen.count())
+	}
+	if _, _, refunds := env.ledger.snapshot(); refunds != 0 {
+		t.Fatalf("a rejected charge must not refund, refunds=%d", refunds)
+	}
+}
+
+// TestRenderPanelRefundsOnGenError verifies a generator failure refunds the
+// charged credit so the balance is restored.
+func TestRenderPanelRefundsOnGenError(t *testing.T) {
+	env := newRenderTestEnv(t)
+	env.gen.err = errors.New("upstream boom")
+	sp := env.seedPanel(t, 1)
+
+	if _, err := env.svc.RenderPanel(context.Background(), 1, sp.panelID); err == nil {
+		t.Fatal("expected error from generator failure")
+	}
+	balance, spends, refunds := env.ledger.snapshot()
+	if spends != 1 || refunds != 1 {
+		t.Fatalf("gen failure should spend once and refund once, spends=%d refunds=%d", spends, refunds)
+	}
+	if balance != 100 {
+		t.Fatalf("balance should be restored to 100 after refund, got %d", balance)
+	}
+}
+
+// TestRenderPanelRefundsOnDownloadError verifies a download failure (after a
+// successful generation charge) refunds the credit.
+func TestRenderPanelRefundsOnDownloadError(t *testing.T) {
+	env := newRenderTestEnv(t)
+	badSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "nope", http.StatusNotFound)
+	}))
+	t.Cleanup(badSrv.Close)
+	env.gen.url = badSrv.URL + "/missing.png"
+	sp := env.seedPanel(t, 1)
+
+	if _, err := env.svc.RenderPanel(context.Background(), 1, sp.panelID); err == nil {
+		t.Fatal("expected error from download failure")
+	}
+	if balance, _, refunds := env.ledger.snapshot(); refunds != 1 || balance != 100 {
+		t.Fatalf("download failure should refund, balance=%d refunds=%d", balance, refunds)
 	}
 }

@@ -34,6 +34,10 @@ import (
 // the caller. It mirrors panel.ErrNotFound so the handler can map it to 404.
 var ErrNotFound = errors.New("not found")
 
+// ErrInsufficientCredits is returned when the caller's credit balance is too low
+// to pay for the image generation. The handler maps it to HTTP 402.
+var ErrInsufficientCredits = errors.New("insufficient credits")
+
 // stylePrefix is the fixed Ghibli / Miyazaki storybook art-direction prefix
 // prepended to every generated prompt. Kept as a constant so the visual style
 // stays consistent across every panel of every book. The no-text constraint
@@ -54,6 +58,10 @@ const statusFailed = "failed"
 // non-positive maxRefs (defensive fallback so the model is never over-fed).
 const defaultMaxRefs = 10
 
+// defaultCost is the credit charge per render when NewService is given a
+// non-positive cost (defensive fallback so a render is never accidentally free).
+const defaultCost = 1
+
 // modelMaxRefs is the hard upper bound the image model accepts. Seedream 4.0
 // accepts up to 10 reference images per request, so we clamp to this regardless
 // of how maxRefs is configured — over-feeding causes a 400 → render failure.
@@ -68,6 +76,19 @@ const modelMaxRefs = 10
 // visual consistency; an empty list yields pure text-to-image.
 type ImageGenerator interface {
 	SeedreamImage(ctx context.Context, prompt string, refImageDataURIs []string) (string, error)
+}
+
+// CreditLedger charges and refunds a user's image-generation credits. It is
+// satisfied by *auth.UserRepo (Spend/Refund). Defined here (where it is used) so
+// the render Service depends only on the narrow interface and tests can inject a
+// fake without any database.
+//
+// Spend deducts cost credits atomically, returning ok=false when the balance is
+// insufficient (no charge made). Refund returns amount credits, used to undo a
+// prior successful Spend when the paid-for generation ultimately fails.
+type CreditLedger interface {
+	Spend(userID int64, cost int) (bool, error)
+	Refund(userID int64, amount int) error
 }
 
 // CoverSetter sets a book's cover image URL, scoped to the owning user. It is
@@ -85,6 +106,8 @@ type Service struct {
 	chapters *chapter.Service
 	assets   *asset.Service
 	cover    CoverSetter
+	ledger   CreditLedger
+	cost     int
 	store    storage.Local
 	http     *http.Client
 	maxRefs  int
@@ -94,12 +117,17 @@ type Service struct {
 // download the generated image; callers should set a sane timeout on it.
 // maxRefs caps how many reference images are forwarded to the multi-image edit
 // model; a non-positive value falls back to defaultMaxRefs.
+// ledger charges cost credits before each generation and refunds on failure; a
+// non-positive cost falls back to defaultCost so a misconfiguration never makes
+// rendering free.
 func NewService(
 	gen ImageGenerator,
 	panels *panel.Service,
 	chapters *chapter.Service,
 	assets *asset.Service,
 	cover CoverSetter,
+	ledger CreditLedger,
+	cost int,
 	store storage.Local,
 	httpClient *http.Client,
 	maxRefs int,
@@ -110,12 +138,17 @@ func NewService(
 	if maxRefs > modelMaxRefs {
 		maxRefs = modelMaxRefs // model hard limit: never send more than 10 images
 	}
+	if cost <= 0 {
+		cost = defaultCost
+	}
 	return &Service{
 		gen:      gen,
 		panels:   panels,
 		chapters: chapters,
 		assets:   assets,
 		cover:    cover,
+		ledger:   ledger,
+		cost:     cost,
 		store:    store,
 		http:     httpClient,
 		maxRefs:  maxRefs,
@@ -153,7 +186,19 @@ func (s *Service) RenderPanel(ctx context.Context, userID, panelID int64) (model
 		return models.Panel{}, fmt.Errorf("render panel %d: build prompt: %w", panelID, err)
 	}
 
+	// Charge the caller BEFORE spending any image-API quota. The deduction is
+	// atomic: an insufficient balance is rejected here (generator never called),
+	// and a successful charge is refunded if any later step fails.
+	ok, err := s.ledger.Spend(userID, s.cost)
+	if err != nil {
+		return models.Panel{}, fmt.Errorf("render panel %d: spend credits: %w", panelID, err)
+	}
+	if !ok {
+		return models.Panel{}, ErrInsufficientCredits
+	}
+
 	if _, err := s.panels.SetPanelStatus(userID, panelID, statusRendering); err != nil {
+		s.refund(userID)
 		return models.Panel{}, fmt.Errorf("render panel %d: set rendering: %w", panelID, err)
 	}
 
@@ -166,12 +211,14 @@ func (s *Service) RenderPanel(ctx context.Context, userID, panelID int64) (model
 
 	remoteURL, err := s.gen.SeedreamImage(ctx, prompt, dataURIs)
 	if err != nil {
+		s.refund(userID)
 		s.markFailed(userID, panelID)
 		return models.Panel{}, fmt.Errorf("render panel %d: generate image: %w", panelID, err)
 	}
 
 	imgBytes, err := s.download(ctx, remoteURL)
 	if err != nil {
+		s.refund(userID)
 		s.markFailed(userID, panelID)
 		return models.Panel{}, fmt.Errorf("render panel %d: download image: %w", panelID, err)
 	}
@@ -179,6 +226,7 @@ func (s *Service) RenderPanel(ctx context.Context, userID, panelID int64) (model
 	ext := extForBytes(imgBytes)
 	localURL, err := s.store.SaveBytes(ch.BookID, ext, imgBytes)
 	if err != nil {
+		s.refund(userID)
 		s.markFailed(userID, panelID)
 		return models.Panel{}, fmt.Errorf("render panel %d: save image: %w", panelID, err)
 	}
@@ -197,6 +245,16 @@ func (s *Service) RenderPanel(ctx context.Context, userID, panelID int64) (model
 		}
 	}
 	return updated, nil
+}
+
+// refund best-effort returns the credits charged for a render that failed after
+// the charge. A refund error is only logged (never surfaced): the caller is
+// already returning the primary failure and must not have it masked, and the
+// user losing at most one credit is preferable to failing the request twice.
+func (s *Service) refund(userID int64) {
+	if err := s.ledger.Refund(userID, s.cost); err != nil {
+		log.Printf("render: refund %d credits to user %d failed: %v", s.cost, userID, err)
+	}
 }
 
 // markFailed best-effort resets the panel status to "failed". Any error here is
