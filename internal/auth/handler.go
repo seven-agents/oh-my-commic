@@ -244,7 +244,14 @@ func (h *Handler) UploadAvatar(w http.ResponseWriter, r *http.Request) {
 	// exhaust memory. ParseMultipartForm is also bounded as defense in depth.
 	r.Body = http.MaxBytesReader(w, r.Body, maxAvatarBytes)
 	if err := r.ParseMultipartForm(maxAvatarBytes); err != nil {
-		writeError(w, http.StatusBadRequest, "文件过大或格式错误")
+		// Distinguish an oversized upload (MaxBytesReader tripped) from a
+		// malformed multipart body so the client gets an actionable message.
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) || strings.Contains(err.Error(), "request body too large") {
+			writeError(w, http.StatusBadRequest, "头像太大啦，请选 2MB 以内的图片")
+			return
+		}
+		writeError(w, http.StatusBadRequest, "图片格式不对，请上传 PNG/JPG/WEBP 图片")
 		return
 	}
 

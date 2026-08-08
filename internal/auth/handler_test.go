@@ -287,6 +287,24 @@ func TestUploadAvatarRejectsNonImage(t *testing.T) {
 	}
 }
 
+func TestUploadAvatarTooLargeReturnsOversizedMessage(t *testing.T) {
+	h, code := newTestHandler(t)
+	r := mountFull(t, h)
+	token := registerAndLogin(t, r, "avatarbig", code)
+
+	// A valid PNG header padded just past the 2 MiB cap so MaxBytesReader trips
+	// during ParseMultipartForm (the multipart envelope pushes it over as well).
+	oversized := make([]byte, maxAvatarBytes+1)
+	copy(oversized, pngBytes)
+	rec := doWithCookie(t, r, avatarRequest(t, "big.png", oversized), token)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("oversized avatar status = %d, want 400; body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "头像太大啦") {
+		t.Fatalf("oversized avatar should use the dedicated too-large message; body=%s", rec.Body.String())
+	}
+}
+
 // makeAdmin creates a role="admin" account directly in the repo (there is no
 // self-service admin endpoint) and issues a session for it, returning the token.
 func makeAdmin(t *testing.T, h *Handler, username string) string {

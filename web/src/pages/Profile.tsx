@@ -11,8 +11,8 @@ import { useAuth } from '../auth/useAuth'
 // 性别可选项：受控下拉，避免自由输入不一致。
 const GENDER_OPTIONS = ['男', '女', '其他'] as const
 
-// 头像上传校验：与参考图上传一致（png/jpg/webp，≤5MB）。
-const MAX_AVATAR_BYTES = 5 * 1024 * 1024
+// 头像上传校验：与后端契约一致（png/jpg/webp，≤2MB）。
+const MAX_AVATAR_BYTES = 2 * 1024 * 1024
 const ACCEPTED_AVATAR = ['image/png', 'image/jpeg', 'image/webp']
 
 type ProfileForm = {
@@ -70,7 +70,7 @@ export default function Profile() {
       return
     }
     if (file.size > MAX_AVATAR_BYTES) {
-      setAvatarError('图片有点大，换一张 5MB 以内的吧～')
+      setAvatarError('图片有点大，换一张 2MB 以内的吧～')
       return
     }
     setAvatarError('')
@@ -123,7 +123,7 @@ export default function Profile() {
           >
             {avatarPreview ? '换一张头像' : '上传头像'}
           </button>
-          <p className="text-xs text-ink-soft/60">点击头像上传 · png/jpg/webp · ≤5MB</p>
+          <p className="text-xs text-ink-soft/60">点击头像上传 · png/jpg/webp · ≤2MB</p>
 
           {avatarError && (
             <p className="rounded-2xl bg-coral/10 px-4 py-3 text-center text-sm font-semibold text-coral">
