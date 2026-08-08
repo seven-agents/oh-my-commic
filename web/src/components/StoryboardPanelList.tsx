@@ -43,7 +43,7 @@ export function StoryboardPanelList({ panels, index, onPanelsChange }: Storyboar
     setSavingId(panel.id)
     setError('')
     try {
-      const saved = await api.put<Panel>(`/api/panels/${panel.id}`, panelBody({ ...panel, ...patch }))
+      const saved = await api.put<Panel>(`/api/v1/panels/${panel.id}`, panelBody({ ...panel, ...patch }))
       replacePanel(saved)
     } catch (err) {
       setError(errorMessage(err))
@@ -58,7 +58,7 @@ export function StoryboardPanelList({ panels, index, onPanelsChange }: Storyboar
     setProcessingId(panel.id)
     setError('')
     try {
-      const done = await api.post<Panel>(`/api/panels/${panel.id}/process`)
+      const done = await api.post<Panel>(`/api/v1/panels/${panel.id}/process`)
       replacePanel(done)
     } catch (err) {
       setError(errorMessage(err))
@@ -79,7 +79,7 @@ export function StoryboardPanelList({ panels, index, onPanelsChange }: Storyboar
       if (isPanelProcessed(p)) continue
       setProcessingId(p.id)
       try {
-        const done = await api.post<Panel>(`/api/panels/${p.id}/process`)
+        const done = await api.post<Panel>(`/api/v1/panels/${p.id}/process`)
         current = current.map((x) => (x.id === done.id ? done : x))
         onPanelsChange(current)
       } catch (err) {

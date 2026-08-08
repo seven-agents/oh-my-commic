@@ -1,4 +1,4 @@
-// 轻量 fetch 封装。所有路径已包含 /api 前缀，base 为空字符串。
+// 轻量 fetch 封装。所有业务路径已包含版本化前缀 /api/v1，base 为空字符串。
 // 始终携带 cookie（credentials: 'include'）。非 2xx 抛出带类型的 ApiError。
 
 import type { User } from './types'
@@ -85,7 +85,7 @@ export const api = {
   del: <T>(path: string) => request<T>('DELETE', path),
 
   // 拉取当前登录用户（含最新积分余额），用于登录后 / 出图 / 漫画化后刷新 header。
-  getMe: () => request<User>('GET', '/api/me'),
+  getMe: () => request<User>('GET', '/api/v1/me'),
 
   // multipart 上传：不要手动设置 Content-Type，交给浏览器带 boundary。
   upload: async <T>(path: string, file: File): Promise<T> => {

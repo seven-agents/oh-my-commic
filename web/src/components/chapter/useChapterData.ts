@@ -31,11 +31,11 @@ export function useChapterData(chapterId: string): ChapterData {
       setLoading(true)
       setError('')
       try {
-        const ch = await api.get<Chapter>(`/api/chapters/${chapterId}`)
+        const ch = await api.get<Chapter>(`/api/v1/chapters/${chapterId}`)
         const [chars, scenes, pnls] = await Promise.all([
-          api.get<Character[]>(`/api/books/${ch.bookId}/characters`),
-          api.get<Scene[]>(`/api/books/${ch.bookId}/scenes`),
-          api.get<Panel[]>(`/api/chapters/${chapterId}/panels`),
+          api.get<Character[]>(`/api/v1/books/${ch.bookId}/characters`),
+          api.get<Scene[]>(`/api/v1/books/${ch.bookId}/scenes`),
+          api.get<Panel[]>(`/api/v1/chapters/${chapterId}/panels`),
         ])
         if (!alive) return
         setChapter(ch)

@@ -29,7 +29,7 @@ export function ComicCompose({
   const { submit: save, submitting: saving } = useSubmitOnce(async () => {
     setError('')
     try {
-      const ch = await api.put<Chapter>(`/api/chapters/${chapterId}/status`, { status: 'done' })
+      const ch = await api.put<Chapter>(`/api/v1/chapters/${chapterId}/status`, { status: 'done' })
       onSaved(ch)
     } catch (err) {
       setError(errorMessage(err))

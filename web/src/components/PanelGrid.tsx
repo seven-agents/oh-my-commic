@@ -48,7 +48,7 @@ export function PanelGrid({ panels, index, onPanelsChange, onNext }: PanelGridPr
     setSavingId(panel.id)
     setError('')
     try {
-      const saved = await api.put<Panel>(`/api/panels/${panel.id}`, panelBody({ ...panel, ...patch }))
+      const saved = await api.put<Panel>(`/api/v1/panels/${panel.id}`, panelBody({ ...panel, ...patch }))
       applyPanel(saved.id, saved)
     } catch (err) {
       setError(errorMessage(err))
@@ -64,7 +64,7 @@ export function PanelGrid({ panels, index, onPanelsChange, onNext }: PanelGridPr
     setProcessingId(panel.id)
     setError('')
     try {
-      const done = await api.post<Panel>(`/api/panels/${panel.id}/process`)
+      const done = await api.post<Panel>(`/api/v1/panels/${panel.id}/process`)
       applyPanel(done.id, done)
     } catch (err) {
       setError(errorMessage(err))
@@ -79,7 +79,7 @@ export function PanelGrid({ panels, index, onPanelsChange, onNext }: PanelGridPr
   const renderOne = async (panel: Panel) => {
     applyPanel(panel.id, { status: 'rendering' })
     try {
-      const done = await api.post<Panel>(`/api/panels/${panel.id}/render`)
+      const done = await api.post<Panel>(`/api/v1/panels/${panel.id}/render`)
       applyPanel(done.id, done)
     } catch (err) {
       setError(errorMessage(err))

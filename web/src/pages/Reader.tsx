@@ -24,8 +24,8 @@ export default function Reader() {
       setLoading(true)
       setError('')
       try {
-        const ch = await api.get<Chapter>(`/api/chapters/${id}`)
-        const pnls = await api.get<Panel[]>(`/api/chapters/${id}/panels`)
+        const ch = await api.get<Chapter>(`/api/v1/chapters/${id}`)
+        const pnls = await api.get<Panel[]>(`/api/v1/chapters/${id}/panels`)
         if (!alive) return
         setChapter(ch)
         setPanels(pnls ?? [])

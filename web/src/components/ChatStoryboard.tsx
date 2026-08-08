@@ -93,7 +93,7 @@ export function ChatStoryboard({
     setError('')
     try {
       const res = await api.post<StoryboardChatReply>(
-        `/api/chapters/${chapterId}/storyboard-chat`,
+        `/api/v1/chapters/${chapterId}/storyboard-chat`,
         { messages: next, panelCount: coverMode ? COVER_PANEL_COUNT : panelCount },
       )
       setMessages([...next, { role: 'assistant', content: res.reply }])

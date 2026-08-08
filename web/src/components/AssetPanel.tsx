@@ -53,8 +53,8 @@ export function AssetPanel({ bookId, characters, scenes, onAssetsChanged }: Asse
     try {
       const path =
         pending.kind === 'scene'
-          ? `/api/books/${bookId}/scenes/${pending.id}`
-          : `/api/books/${bookId}/characters/${pending.id}`
+          ? `/api/v1/books/${bookId}/scenes/${pending.id}`
+          : `/api/v1/books/${bookId}/characters/${pending.id}`
       await api.del(path)
       await onAssetsChanged()
       setPending(null)

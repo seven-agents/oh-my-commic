@@ -136,7 +136,7 @@ function DeleteChapterModal({
     setDeleting(true)
     setError('')
     try {
-      await api.del(`/api/chapters/${chapter.id}`)
+      await api.del(`/api/v1/chapters/${chapter.id}`)
       onDeleted(chapter.id)
     } catch (err) {
       setError(errorMessage(err))
@@ -219,7 +219,7 @@ function CoverCard({
     setCreating(true)
     setError('')
     try {
-      const c = await api.post<Chapter>(`/api/books/${book.id}/cover-chapter`, {})
+      const c = await api.post<Chapter>(`/api/v1/books/${book.id}/cover-chapter`, {})
       onCreated(c)
       navigate(`/chapters/${c.id}`)
     } catch (err) {
@@ -287,7 +287,7 @@ function NewChapterModal({
     setSubmitting(true)
     setError('')
     try {
-      const ch = await api.post<Chapter>(`/api/books/${bookId}/chapters`, { title: trimmed })
+      const ch = await api.post<Chapter>(`/api/v1/books/${bookId}/chapters`, { title: trimmed })
       setTitle('')
       onCreated(ch)
     } catch (err) {
