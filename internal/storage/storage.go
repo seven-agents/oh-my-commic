@@ -66,6 +66,24 @@ func randomID() (string, error) {
 // SaveBytes writes b to Root/{bookID}/{randomID}{ext} and returns the relative
 // URL /media/{bookID}/{file}. ext must be an allowed image extension.
 func (s Local) SaveBytes(bookID int64, ext string, b []byte) (string, error) {
+	return s.saveUnder(strconv.FormatInt(bookID, 10), ext, b)
+}
+
+// SaveUserAvatar writes b under Root/users/{userID}/{randomID}{ext} and returns
+// the relative URL /media/users/{userID}/{file}. User avatars live in their own
+// "users/" namespace so they never collide with the book-scoped {bookID}/ dirs.
+// ext must be an allowed image extension. The userID is rendered as a decimal
+// string (never user-controlled path text), so the resulting directory is
+// path-traversal safe.
+func (s Local) SaveUserAvatar(userID int64, ext string, b []byte) (string, error) {
+	return s.saveUnder(path.Join("users", strconv.FormatInt(userID, 10)), ext, b)
+}
+
+// saveUnder writes b to Root/{subDir}/{randomID}{ext} and returns the relative
+// URL /media/{subDir}/{file}. subDir must be a server-generated, slash-separated
+// path segment (never raw user input); ext is validated against the image
+// allowlist. It is the shared implementation behind SaveBytes/SaveUserAvatar.
+func (s Local) saveUnder(subDir, ext string, b []byte) (string, error) {
 	cleanExt, err := validateExt(ext)
 	if err != nil {
 		return "", err
@@ -75,8 +93,7 @@ func (s Local) SaveBytes(bookID int64, ext string, b []byte) (string, error) {
 		return "", err
 	}
 
-	bookDir := strconv.FormatInt(bookID, 10)
-	dir := filepath.Join(s.Root, bookDir)
+	dir := filepath.Join(s.Root, filepath.FromSlash(subDir))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("storage: 创建目录失败: %w", err)
 	}
@@ -88,7 +105,7 @@ func (s Local) SaveBytes(bookID int64, ext string, b []byte) (string, error) {
 	}
 
 	// URLs always use forward slashes regardless of OS path separator.
-	relURL := mediaPrefix + path.Join(bookDir, name)
+	relURL := mediaPrefix + path.Join(subDir, name)
 	return relURL, nil
 }
 

@@ -46,16 +46,25 @@ paths:
     post:
       tags: [auth]
       summary: 注册新用户
+      description: >
+        用邀请码注册。成功后立即登录（set `session` cookie）并返回新用户
+        （role=user，含初始积分）。邀请码错误或字段非法返回 400；
+        用户名或邮箱已被占用返回 409。
       security: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/Credentials"
+              $ref: "#/components/schemas/RegisterInput"
       responses:
         "201":
-          description: 注册成功，返回新用户（含初始积分 100）
+          description: 注册成功，返回新用户
+          headers:
+            Set-Cookie:
+              description: session cookie
+              schema:
+                type: string
           content:
             application/json:
               schema:
@@ -63,7 +72,7 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
         "409":
-          description: 昵称已被占用
+          description: 用户名或邮箱已被占用
           content:
             application/json:
               schema:
@@ -123,6 +132,95 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "404":
           $ref: "#/components/responses/NotFound"
+
+  /api/v1/me/profile:
+    put:
+      tags: [auth]
+      summary: 更新当前用户的可编辑资料（昵称/年龄/性别）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProfileInput"
+      responses:
+        "200":
+          description: 更新后的用户
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/me/avatar:
+    post:
+      tags: [auth]
+      summary: 上传头像（png/jpg/webp，≤2MB）
+      description: >
+        multipart/form-data，单文件字段 file。后端按内容嗅探类型，
+        存到 users/{userID}/ 并返回带 avatarUrl 的用户。类型/大小非法返回 400。
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+      responses:
+        "200":
+          description: 更新后的用户（含 avatarUrl）
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/User"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /api/v1/admin/invite-code:
+    get:
+      tags: [auth]
+      summary: 读取当前全局邀请码（仅管理员）
+      responses:
+        "200":
+          description: 当前邀请码
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InviteCode"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+
+  /api/v1/admin/invite-code/rotate:
+    post:
+      tags: [auth]
+      summary: 轮换全局邀请码（仅管理员）
+      description: 生成并持久化一个新的邀请码并返回。无请求体。
+      responses:
+        "200":
+          description: 新的邀请码
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InviteCode"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
 
   /api/v1/books:
     get:
@@ -890,6 +988,12 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: 已登录但无权限（非管理员）
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     RateLimited:
       description: 上游限流
       content:
@@ -921,22 +1025,80 @@ components:
     Credentials:
       type: object
       additionalProperties: false
-      required: [nickname, password]
+      required: [username, password]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+
+    RegisterInput:
+      type: object
+      additionalProperties: false
+      required: [username, password, email, inviteCode]
+      properties:
+        username:
+          type: string
+        password:
+          type: string
+        email:
+          type: string
+        inviteCode:
+          type: string
+        nickname:
+          type: string
+
+    ProfileInput:
+      type: object
+      additionalProperties: false
+      required: [nickname, age, gender]
       properties:
         nickname:
           type: string
-        password:
+        age:
+          type: integer
+        gender:
+          type: string
+
+    InviteCode:
+      type: object
+      additionalProperties: false
+      required: [inviteCode]
+      properties:
+        inviteCode:
           type: string
 
     User:
       type: object
       additionalProperties: false
-      required: [id, nickname, createdAt, credits]
+      required:
+        - id
+        - username
+        - nickname
+        - email
+        - role
+        - age
+        - gender
+        - avatarUrl
+        - createdAt
+        - credits
       properties:
         id:
           type: integer
           format: int64
+        username:
+          type: string
         nickname:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+        age:
+          type: integer
+        gender:
+          type: string
+        avatarUrl:
           type: string
         createdAt:
           type: string

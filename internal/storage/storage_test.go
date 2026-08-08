@@ -45,6 +45,29 @@ func TestSaveFromReader(t *testing.T) {
 	}
 }
 
+func TestSaveUserAvatarUnderUsersDir(t *testing.T) {
+	s := Local{Root: t.TempDir()}
+	url, err := s.SaveUserAvatar(9, ".png", []byte("img"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(url, "/media/users/9/") || !strings.HasSuffix(url, ".png") {
+		t.Fatalf("URL 前缀/后缀错: %s", url)
+	}
+	// 文件应落在 users/9 下，与书籍目录命名空间隔离。
+	p := filepath.Join(s.Root, strings.TrimPrefix(url, "/media/"))
+	if _, err := os.Stat(p); err != nil {
+		t.Fatalf("头像未落地: %v", err)
+	}
+}
+
+func TestSaveUserAvatarRejectsBadExt(t *testing.T) {
+	s := Local{Root: t.TempDir()}
+	if _, err := s.SaveUserAvatar(1, ".exe", []byte("x")); err == nil {
+		t.Fatal("非法扩展名应报错")
+	}
+}
+
 func TestSaveRejectsMaliciousExt(t *testing.T) {
 	s := Local{Root: t.TempDir()}
 	bad := []string{

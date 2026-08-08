@@ -28,6 +28,7 @@ cd web && npm run build
 docker buildx build --platform linux/amd64 -t oh-my-commic:latest --load .
 ```
 > 运行需要 `.env`（`DASHSCOPE_API_KEY` + `ARK_API_KEY`）。config.Load 缺任一会 fatal。
+> 用户管理相关 env（均可选）：`ADMIN_USERNAME`/`ADMIN_PASSWORD`/`ADMIN_EMAIL` 播种管理员（空用户名=不播种，非法即 fatal）；`INVITE_CODE` 指定全局邀请码（缺省则随机生成，启动时打日志 `邀请码: ...` 供分发）；注册赠送积分复用 `SIGNUP_CREDITS`（默认 100）。
 
 ## 架构 / 模块（`internal/`）
 `models` 数据结构 · `config` 环境变量 · `db` SQLite+迁移 · `auth` 登录/session(持久化)/隔离中间件 · `book`/`asset`/`chapter`/`panel` CRUD · `comicify` 资产漫画化(Seedream 图生图) · `ai` 千问文本+两段式提示词+Seedream 生图客户端 · `render` 单格出图编排 · `story` 编排(storyboard-chat/process) · `imageutil` 参考图缩放 · `storage` 本地存图 · `httpx` 路由+SPA托管+请求日志。
@@ -35,6 +36,7 @@ docker buildx build --platform linux/amd64 -t oh-my-commic:latest --load .
 
 ## 核心约定（务必遵守）
 - **多用户隔离是第一要务**：每个数据访问都必须能追溯并校验 `user_id`；跨用户/不存在一律返回 **404**（不泄露存在性）。repository 查询带 `WHERE ... AND user_id=?`；资源按 panel→chapter→book→user 链式校验归属。
+- **认证模型**：**用户名登录**（`{username,password}`，非邮箱）。注册走**邀请码闸门**——全局邀请码存 `settings` 表、可轮换，**空邀请码 = 注册未开放**（任何输入都拒，见 `auth/service.go` 的防御性判断）；仅 `role=admin` 可读/轮换邀请码（`GET|POST /api/v1/admin/invite-code[/rotate]`，非管理员 **403**）。角色 `role∈{admin,user}`：普通注册固定 `user`；管理员由**启动时 env 播种**（`ADMIN_USERNAME`/`ADMIN_PASSWORD`/`ADMIN_EMAIL`）——空用户名=不播种，用户名/密码**非法则启动 fatal**（`SeedAdmin` 幂等，已存在则跳过）。邮箱本期**收集但不验证**（deferred；字段/接口已留位）。
 - **不可变**：service 返回新对象，不原地改入参。
 - **小文件、单一职责**（200-400 行常态）。
 - **错误处理**：`%w` 包裹；AI/上游错误按类映射（**429** 限流 / **504** 超时 / **502** 不可用，sentinel 在 `internal/ai/errors.go`，只看状态码/超时、不读 body）；**绝不把 API key 或上游 body 返回给客户端 / 打日志**。
@@ -48,6 +50,7 @@ docker buildx build --platform linux/amd64 -t oh-my-commic:latest --load .
 - **git**：每功能一分支，完成后 `--no-ff` 合并回 main。提交信息中文 `type: 描述`。`.env`/`*.db`/`web/dist`/`node_modules` 均 gitignore，绝不入库/入镜像。
 
 ## 关键数据模型
+`User(username, email, role, nickname=展示名, age, gender, avatar_url, credits)`（登录用 username；`role∈{admin,user}`）。全局邀请码存 `settings` 表。
 `Book(user_id, cover_url, style, summary)` → `Character/Scene(book_id, image_url=锁定形象)` + `Chapter(book_id, order, status, is_cover, summary, conversation JSON, panel_count)` → `Panel(chapter_id, order, content, caption, character_ids, char_expressions, scene_id, event, location, image_prompt, image_url, status)`。
 - 章节状态机：`draft→storyboarding→rendering→done`（放宽 + 同状态幂等，见 chapter/service.go）。
 - **两段式分镜**：第1段只产出 `content`；第2段 `process` 从 content 解析出结构字段 + `image_prompt`；渲染用结构字段 + 参考图。

@@ -12,6 +12,7 @@ import (
 	"github.com/seven-agents/oh-my-commic/internal/auth"
 	"github.com/seven-agents/oh-my-commic/internal/book"
 	"github.com/seven-agents/oh-my-commic/internal/db"
+	"github.com/seven-agents/oh-my-commic/internal/storage"
 )
 
 // newSPATestRouter wires the real auth/book handlers plus a SPA handler rooted
@@ -27,7 +28,10 @@ func newSPATestRouter(t *testing.T, dist string) http.Handler {
 	t.Cleanup(func() { d.Close() })
 
 	sess := auth.NewSession(nil)
-	authHandler := auth.NewHandler(auth.NewService(auth.NewUserRepo(d), sess, 100))
+	authHandler := auth.NewHandler(
+		auth.NewService(auth.NewUserRepo(d), auth.NewInviteRepo(d), sess, 100),
+		storage.Local{Root: t.TempDir()},
+	)
 	bookHandler := book.NewHandler(book.NewService(book.NewRepo(d)))
 
 	spa, err := NewSPAHandler(dist)

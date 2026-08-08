@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../auth/useAuth'
+import { mediaUrl } from '../api/media'
 
 type AppHeaderProps = {
   // 面包屑/标题右侧的额外内容（可选）
@@ -23,6 +24,7 @@ export function AppHeader({ right }: AppHeaderProps) {
   }, [open])
 
   const initial = user?.nickname?.trim()?.[0] ?? '🙂'
+  const avatarUrl = mediaUrl(user?.avatarUrl)
 
   return (
     <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-ink/5 bg-cream/80 px-6 py-4 backdrop-blur">
@@ -44,10 +46,14 @@ export function AppHeader({ right }: AppHeaderProps) {
           <button
             type="button"
             onClick={() => setOpen((v) => !v)}
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-gradient-to-b from-sun to-peach font-display text-lg font-bold text-white shadow-soft-sm transition-transform hover:-translate-y-0.5"
+            className="flex h-11 w-11 items-center justify-center overflow-hidden rounded-full bg-gradient-to-b from-sun to-peach font-display text-lg font-bold text-white shadow-soft-sm transition-transform hover:-translate-y-0.5"
             aria-label="用户菜单"
           >
-            {initial}
+            {avatarUrl ? (
+              <img src={avatarUrl} alt="头像" className="h-full w-full object-cover" />
+            ) : (
+              initial
+            )}
           </button>
           {open && (
             <div className="absolute right-0 mt-2 w-44 animate-pop-in rounded-3xl bg-white p-2 shadow-soft-lg">
@@ -56,6 +62,13 @@ export function AppHeader({ right }: AppHeaderProps) {
                   你好，{user.nickname} 👋
                 </p>
               )}
+              <Link
+                to="/profile"
+                onClick={() => setOpen(false)}
+                className="block w-full rounded-2xl px-3 py-2.5 text-left font-display font-semibold text-ink-soft hover:bg-sky/10"
+              >
+                个人资料
+              </Link>
               <button
                 type="button"
                 onClick={() => logout()}

@@ -2,65 +2,119 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Button, Card, Input } from '../components/ui'
 import { useAuth } from '../auth/useAuth'
-import { ApiError } from '../api/client'
+import { errorMessage } from '../api/errors'
 import { useSubmitOnce } from '../hooks/useSubmitOnce'
 
 type Tab = 'login' | 'register'
 
-const MIN_PASSWORD = 6
+// 前端即时提示用，与后端保持一致的规则。最终校验仍以后端 400/409 文案为准。
+const USERNAME_RE = /^[a-z][a-z0-9_]{2,19}$/
+const PASSWORD_LETTER_RE = /[a-zA-Z]/
+const PASSWORD_DIGIT_RE = /[0-9]/
+const PASSWORD_MIN = 8
+const PASSWORD_MAX = 64
+
+// 用户名友好提示：小写字母开头，3-20 位，仅小写字母/数字/下划线。
+function usernameHint(username: string): string | null {
+  if (!username) return '用户名不能为空哦～'
+  if (!USERNAME_RE.test(username)) {
+    return '用户名要用小写字母开头，3-20 位，只能有小写字母、数字和下划线～'
+  }
+  return null
+}
+
+// 密码友好提示：8-64 位，且同时包含字母和数字。
+function passwordHint(password: string): string | null {
+  if (password.length < PASSWORD_MIN || password.length > PASSWORD_MAX) {
+    return `密码要 ${PASSWORD_MIN}-${PASSWORD_MAX} 位哦～`
+  }
+  if (!PASSWORD_LETTER_RE.test(password) || !PASSWORD_DIGIT_RE.test(password)) {
+    return '密码要同时有字母和数字，安全一点～'
+  }
+  return null
+}
 
 export default function Login() {
   const navigate = useNavigate()
   const { login, register } = useAuth()
 
   const [tab, setTab] = useState<Tab>('login')
-  const [nickname, setNickname] = useState('')
-  const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+
+  // 登录字段
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+
+  // 注册字段（含邮箱、邀请码、选填昵称）
+  const [email, setEmail] = useState('')
+  const [inviteCode, setInviteCode] = useState('')
+  const [nickname, setNickname] = useState('')
 
   const switchTab = (next: Tab) => {
     setTab(next)
     setError('')
   }
 
-  const validate = (): string | null => {
-    if (!nickname.trim()) return '先给自己起个昵称吧～'
-    if (password.length < MIN_PASSWORD) return `密码至少 ${MIN_PASSWORD} 位哦`
+  // 注册前的即时校验：用户名与密码用与后端一致的规则提前拦一道，
+  // 邮箱/邀请码只做非空提示，格式与有效性交给后端判定。
+  const validateRegister = (): string | null => {
+    const uname = usernameHint(username.trim())
+    if (uname) return uname
+    const pwd = passwordHint(password)
+    if (pwd) return pwd
+    if (!email.trim()) return '填一下邮箱吧～'
+    if (!inviteCode.trim()) return '还需要一个邀请码才能加入哦～'
     return null
   }
 
-  const messageFor = (err: unknown): string => {
-    if (err instanceof ApiError) {
-      if (err.status === 401) return '昵称或密码不对哦～'
-      if (err.status === 409) return '这个昵称被用啦，换一个？'
-      if (err.status === 400) return '信息填得不太对，检查一下～'
-      return err.message
-    }
-    return '网络开小差了，待会儿再试试～'
-  }
-
-  const { submit, submitting } = useSubmitOnce(async () => {
+  const doLogin = useSubmitOnce(async () => {
     setError('')
-    const invalid = validate()
+    if (!username.trim()) {
+      setError('用户名不能为空哦～')
+      return
+    }
+    if (!password) {
+      setError('密码不能为空哦～')
+      return
+    }
+    try {
+      await login(username.trim(), password)
+      navigate('/', { replace: true })
+    } catch (err) {
+      setError(errorMessage(err))
+    }
+  })
+
+  const doRegister = useSubmitOnce(async () => {
+    setError('')
+    const invalid = validateRegister()
     if (invalid) {
       setError(invalid)
       return
     }
     try {
-      if (tab === 'login') {
-        await login(nickname.trim(), password)
-      } else {
-        await register(nickname.trim(), password)
-      }
+      await register({
+        username: username.trim(),
+        password,
+        email: email.trim(),
+        inviteCode: inviteCode.trim(),
+        nickname: nickname.trim() || undefined,
+      })
       navigate('/', { replace: true })
     } catch (err) {
-      setError(messageFor(err))
+      setError(errorMessage(err))
     }
   })
 
+  const submitting = tab === 'login' ? doLogin.submitting : doRegister.submitting
+
   const onSubmit = (e: FormEvent) => {
     e.preventDefault()
-    void submit()
+    if (tab === 'login') {
+      void doLogin.submit()
+    } else {
+      void doRegister.submit()
+    }
   }
 
   return (
@@ -100,23 +154,55 @@ export default function Login() {
 
           <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>
             <Input
-              id="nickname"
-              label="昵称"
-              placeholder="给自己起个名字"
+              id="username"
+              label="用户名"
+              placeholder="小写字母开头，3-20 位"
               autoComplete="username"
-              value={nickname}
-              onChange={(e) => setNickname(e.target.value)}
+              hint={tab === 'register' ? '只能用小写字母、数字和下划线，字母开头～' : undefined}
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
             />
             <Input
               id="password"
               type="password"
               label="密码"
-              placeholder="至少 6 位"
+              placeholder={tab === 'register' ? '8-64 位，含字母和数字' : '请输入密码'}
               autoComplete={tab === 'login' ? 'current-password' : 'new-password'}
-              hint={tab === 'register' ? '密码至少 6 位，记牢一点哦～' : undefined}
+              hint={tab === 'register' ? '至少 8 位，字母和数字都要有哦～' : undefined}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
+
+            {tab === 'register' && (
+              <>
+                <Input
+                  id="email"
+                  type="email"
+                  label="邮箱"
+                  placeholder="爸爸妈妈的邮箱"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+                <Input
+                  id="inviteCode"
+                  label="邀请码"
+                  placeholder="填写收到的邀请码"
+                  autoComplete="off"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                />
+                <Input
+                  id="nickname"
+                  label="昵称（选填）"
+                  placeholder="想让大家怎么叫你？"
+                  autoComplete="nickname"
+                  hint="不填的话，就用用户名当昵称啦～"
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                />
+              </>
+            )}
 
             {error && (
               <p className="rounded-2xl bg-coral/10 px-4 py-3 text-center text-sm font-semibold text-coral">

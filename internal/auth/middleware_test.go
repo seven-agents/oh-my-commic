@@ -4,7 +4,11 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/seven-agents/oh-my-commic/internal/db"
 )
 
 func TestRequireUser(t *testing.T) {
@@ -53,5 +57,66 @@ func TestRequireUserInvalidToken(t *testing.T) {
 func TestUserIDAbsent(t *testing.T) {
 	if got := UserID(context.Background()); got != 0 {
 		t.Fatalf("无 userID 时应返回 0, got %d", got)
+	}
+}
+
+// adminUser / regularUser build NewUser rows for RequireAdmin tests.
+func makeUser(username, role string) NewUser {
+	return NewUser{
+		Username:     username,
+		Email:        username + "@example.com",
+		PasswordHash: "hash",
+		Nickname:     username,
+		Role:         role,
+		Credits:      0,
+	}
+}
+
+func TestRequireAdmin(t *testing.T) {
+	d, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { d.Close() })
+
+	repo := NewUserRepo(d)
+	admin, err := repo.Create(makeUser("boss", "admin"))
+	if err != nil {
+		t.Fatalf("create admin: %v", err)
+	}
+	user, err := repo.Create(makeUser("kid", "user"))
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	sess := NewSession(nil)
+	adminTok := sess.Issue(admin.ID)
+	userTok := sess.Issue(user.ID)
+
+	r := chi.NewRouter()
+	r.With(RequireAdmin(sess, repo)).Get("/", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(200)
+	})
+
+	do := func(tok string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest("GET", "/", nil)
+		if tok != "" {
+			req.AddCookie(&http.Cookie{Name: "session", Value: tok})
+		}
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec
+	}
+
+	if rec := do(adminTok); rec.Code != 200 {
+		t.Fatalf("admin 应 200, got %d", rec.Code)
+	}
+	if rec := do(userTok); rec.Code != 403 {
+		t.Fatalf("普通用户应 403, got %d", rec.Code)
+	} else if body := rec.Body.String(); !strings.Contains(body, "需要管理员权限") {
+		t.Fatalf("403 body 应含中文提示, got %q", body)
+	}
+	if rec := do(""); rec.Code != 401 {
+		t.Fatalf("无 session 应 401, got %d", rec.Code)
 	}
 }

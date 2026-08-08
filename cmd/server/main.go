@@ -46,8 +46,26 @@ func main() {
 
 	// userRepo doubles as the render/comicify credit ledger (Spend/Refund).
 	userRepo := auth.NewUserRepo(d)
-	authSvc := auth.NewService(userRepo, sess, cfg.SignupCredits)
-	authHandler := auth.NewHandler(authSvc)
+	inviteRepo := auth.NewInviteRepo(d)
+	authSvc := auth.NewService(userRepo, inviteRepo, sess, cfg.SignupCredits)
+	authHandler := auth.NewHandler(authSvc, media)
+
+	// Seed the registration gate and the initial admin. db.Open has already run
+	// migrations, so the settings/users tables exist. Order: invite code first so
+	// the admin account (and any ops handoff) has a usable code, then admin.
+	//
+	// The invite code is printed so ops can distribute it on first boot; the admin
+	// password is never logged. An invalid admin username/password is fatal by
+	// design (a misconfigured admin must not boot silently); an empty admin
+	// username disables seeding.
+	code, err := authSvc.SeedInvite(cfg.InviteCode)
+	if err != nil {
+		log.Fatalf("播种邀请码失败: %v", err)
+	}
+	log.Printf("邀请码: %s", code)
+	if err := authSvc.SeedAdmin(cfg.AdminUsername, cfg.AdminPassword, cfg.AdminEmail, cfg.SignupCredits); err != nil {
+		log.Fatalf("播种管理员失败: %v", err)
+	}
 
 	bookRepo := book.NewRepo(d)
 	bookSvc := book.NewService(bookRepo)
@@ -106,16 +124,17 @@ func main() {
 	}
 
 	router := httpx.NewRouter(httpx.Deps{
-		Session: sess,
-		Auth:    authHandler,
-		Book:    bookHandler,
-		Asset:   assetHandler,
-		Chapter: chapterHandler,
-		Panel:   panelHandler,
-		Story:   storyHandler,
-		Render:  renderHandler,
-		Media:   media.Handler(),
-		Static:  static,
+		Session:  sess,
+		UserRepo: userRepo,
+		Auth:     authHandler,
+		Book:     bookHandler,
+		Asset:    assetHandler,
+		Chapter:  chapterHandler,
+		Panel:    panelHandler,
+		Story:    storyHandler,
+		Render:   renderHandler,
+		Media:    media.Handler(),
+		Static:   static,
 	})
 
 	addr := ":" + cfg.Port

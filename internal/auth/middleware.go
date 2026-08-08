@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 )
 
@@ -26,13 +27,7 @@ const userIDKey ctxKey = iota
 func RequireUser(sess *Session) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			cookie, err := r.Cookie(cookieName)
-			if err != nil {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
-				return
-			}
-
-			userID, ok := sess.UserID(cookie.Value)
+			userID, ok := resolveUser(sess, r)
 			if !ok {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
@@ -42,6 +37,54 @@ func RequireUser(sess *Session) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
+}
+
+// resolveUser reads the session cookie from r and resolves it to a user ID via
+// sess. It returns ok=false when the cookie is missing or the token is unknown,
+// so callers can uniformly answer 401. It is the shared token-parsing logic for
+// both RequireUser and RequireAdmin.
+func resolveUser(sess *Session, r *http.Request) (int64, bool) {
+	cookie, err := r.Cookie(cookieName)
+	if err != nil {
+		return 0, false
+	}
+	return sess.UserID(cookie.Value)
+}
+
+// RequireAdmin returns middleware that authenticates the request (same session
+// resolution as RequireUser) and then requires the resolved user to have the
+// "admin" role. A missing or unknown session yields 401 Unauthorized; an
+// authenticated non-admin (or a user that can no longer be loaded) yields 403
+// Forbidden with a JSON body {"error":"需要管理员权限"}. On success the user ID is
+// injected into the request context, exactly as RequireUser does.
+func RequireAdmin(sess *Session, repo *UserRepo) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userID, ok := resolveUser(sess, r)
+			if !ok {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+
+			user, err := repo.ByID(userID)
+			if err != nil || user.Role != "admin" {
+				writeForbidden(w)
+				return
+			}
+
+			ctx := context.WithValue(r.Context(), userIDKey, userID)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// writeForbidden responds 403 with the admin-only JSON error. Encoding a fixed
+// struct never fails in practice; any error is swallowed after the status and
+// content type are already committed.
+func writeForbidden(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(http.StatusForbidden)
+	_ = json.NewEncoder(w).Encode(map[string]string{"error": "需要管理员权限"})
 }
 
 // UserID returns the authenticated user's ID from ctx, or 0 if the request was

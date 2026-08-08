@@ -4,11 +4,13 @@
 // cmd/server, but injects a fake image generator so no network calls or real API
 // keys are required — the test must pass with an empty environment.
 //
-// The walk exercises: registration, login (cookie), GET /me (credits==100),
-// book + character + chapter + panel CRUD, cross-user isolation (404), and the
-// 402 insufficient-credit path on panel render (the fake generator must never be
-// called). Each response is checked with openapi3filter.ValidateResponse so a
-// drifted handler (or a stale openapi.yaml) fails the build.
+// The walk exercises: invite-gated registration (+ bad-invite 400), login
+// (cookie), GET /me (credits==100), PUT /me/profile, the admin invite-code
+// endpoints (regular user 403, admin 200 + rotate 200), book + character +
+// chapter + panel CRUD, cross-user isolation (404), and the 402 insufficient-
+// credit path on panel render (the fake generator must never be called). Each
+// response is checked with openapi3filter.ValidateResponse so a drifted handler
+// (or a stale openapi.yaml) fails the build.
 package contract
 
 import (
@@ -41,6 +43,15 @@ import (
 	"github.com/seven-agents/oh-my-commic/internal/render"
 	"github.com/seven-agents/oh-my-commic/internal/storage"
 	"github.com/seven-agents/oh-my-commic/internal/story"
+)
+
+// Seeded credentials used across the AI-free contract walk. The invite code
+// gates registration; the admin account backs the admin-only invite endpoints.
+const (
+	testInviteCode = "welcome123"
+	adminUsername  = "adminuser"
+	adminPassword  = "adminpw123"
+	adminEmail     = "admin@example.com"
 )
 
 // fakeGenerator is an ImageGenerator/ImageEditor that records whether it was
@@ -79,8 +90,18 @@ func newTestApp(t *testing.T) *testApp {
 	userRepo := auth.NewUserRepo(d)
 
 	// SignupCredits fixed at 100 so the /me credits assertion is deterministic.
-	authSvc := auth.NewService(userRepo, sess, 100)
-	authHandler := auth.NewHandler(authSvc)
+	authSvc := auth.NewService(userRepo, auth.NewInviteRepo(d), sess, 100)
+	authHandler := auth.NewHandler(authSvc, media)
+
+	// Seed a known invite code so registration can proceed AI-free, and an admin
+	// account so the admin invite-code endpoints can be exercised. Both run against
+	// the in-memory/temp DB and require no environment.
+	if _, err := authSvc.SeedInvite(testInviteCode); err != nil {
+		t.Fatalf("seed invite: %v", err)
+	}
+	if err := authSvc.SeedAdmin(adminUsername, adminPassword, adminEmail, 100); err != nil {
+		t.Fatalf("seed admin: %v", err)
+	}
 
 	bookRepo := book.NewRepo(d)
 	bookHandler := book.NewHandler(book.NewService(bookRepo))
@@ -112,16 +133,17 @@ func newTestApp(t *testing.T) *testApp {
 	renderHandler := render.NewHandler(renderSvc)
 
 	router := httpx.NewRouter(httpx.Deps{
-		Session: sess,
-		Auth:    authHandler,
-		Book:    bookHandler,
-		Asset:   assetHandler,
-		Chapter: chapterHandler,
-		Panel:   panelHandler,
-		Story:   storyHandler,
-		Render:  renderHandler,
-		Media:   media.Handler(),
-		Static:  nil,
+		Session:  sess,
+		UserRepo: userRepo,
+		Auth:     authHandler,
+		Book:     bookHandler,
+		Asset:    assetHandler,
+		Chapter:  chapterHandler,
+		Panel:    panelHandler,
+		Story:    storyHandler,
+		Render:   renderHandler,
+		Media:    media.Handler(),
+		Static:   nil,
 	})
 
 	srv := httptest.NewServer(router)
@@ -246,18 +268,36 @@ func (a *testApp) call(t *testing.T, method, path, cookie string, body any) (int
 func TestContractEndToEnd(t *testing.T) {
 	app := newTestApp(t)
 
-	// --- register user A ---
+	// --- register user A (invite-gated, username/email/password) ---
 	code, _ := app.call(t, http.MethodPost, "/api/v1/register", "",
-		map[string]string{"nickname": "小明", "password": "pw123456"})
+		map[string]any{
+			"username":   "xiaoming",
+			"password":   "pw123456",
+			"email":      "xiaoming@example.com",
+			"inviteCode": testInviteCode,
+			"nickname":   "小明",
+		})
 	if code != http.StatusCreated {
 		t.Fatalf("register: want 201, got %d", code)
 	}
 
+	// --- wrong invite code -> 400 (validated envelope) ---
+	code, body := app.call(t, http.MethodPost, "/api/v1/register", "",
+		map[string]any{
+			"username":   "baduser",
+			"password":   "pw123456",
+			"email":      "bad@example.com",
+			"inviteCode": "not-the-code",
+		})
+	if code != http.StatusBadRequest {
+		t.Fatalf("register bad invite: want 400, got %d: %s", code, body)
+	}
+
 	// --- login user A (capture cookie) ---
-	cookie := app.login(t, "小明", "pw123456")
+	cookie := app.login(t, "xiaoming", "pw123456")
 
 	// --- GET /me: credits must be 100 ---
-	code, body := app.call(t, http.MethodGet, "/api/v1/me", cookie, nil)
+	code, body = app.call(t, http.MethodGet, "/api/v1/me", cookie, nil)
 	if code != http.StatusOK {
 		t.Fatalf("me: want 200, got %d: %s", code, body)
 	}
@@ -265,6 +305,18 @@ func TestContractEndToEnd(t *testing.T) {
 	mustJSON(t, body, &me)
 	if me.Credits != 100 {
 		t.Fatalf("me: want credits 100, got %d", me.Credits)
+	}
+
+	// --- update profile (nickname/age/gender) -> 200 User ---
+	code, body = app.call(t, http.MethodPut, "/api/v1/me/profile", cookie,
+		map[string]any{"nickname": "小明明", "age": 8, "gender": "男"})
+	if code != http.StatusOK {
+		t.Fatalf("update profile: want 200, got %d: %s", code, body)
+	}
+	var updated models.User
+	mustJSON(t, body, &updated)
+	if updated.Nickname != "小明明" || updated.Age != 8 || updated.Gender != "男" {
+		t.Fatalf("update profile: unexpected user %+v", updated)
 	}
 
 	// --- create a book ---
@@ -335,10 +387,33 @@ func TestContractEndToEnd(t *testing.T) {
 
 	// --- isolation: user B cannot see A's book -> 404 (validated envelope) ---
 	if code, _ = app.call(t, http.MethodPost, "/api/v1/register", "",
-		map[string]string{"nickname": "小红", "password": "pw654321"}); code != http.StatusCreated {
+		map[string]any{
+			"username":   "xiaohong",
+			"password":   "pw654321",
+			"email":      "xiaohong@example.com",
+			"inviteCode": testInviteCode,
+			"nickname":   "小红",
+		}); code != http.StatusCreated {
 		t.Fatalf("register B: want 201, got %d", code)
 	}
-	cookieB := app.login(t, "小红", "pw654321")
+	cookieB := app.login(t, "xiaohong", "pw654321")
+
+	// --- admin invite-code: regular user (B) is forbidden -> 403 ---
+	code, body = app.call(t, http.MethodGet, "/api/v1/admin/invite-code", cookieB, nil)
+	if code != http.StatusForbidden {
+		t.Fatalf("admin invite-code as regular user: want 403, got %d: %s", code, body)
+	}
+
+	// --- admin invite-code: admin can read (200) and rotate (200) ---
+	cookieAdmin := app.login(t, adminUsername, adminPassword)
+	code, body = app.call(t, http.MethodGet, "/api/v1/admin/invite-code", cookieAdmin, nil)
+	if code != http.StatusOK {
+		t.Fatalf("admin read invite-code: want 200, got %d: %s", code, body)
+	}
+	code, body = app.call(t, http.MethodPost, "/api/v1/admin/invite-code/rotate", cookieAdmin, nil)
+	if code != http.StatusOK {
+		t.Fatalf("admin rotate invite-code: want 200, got %d: %s", code, body)
+	}
 	code, body = app.call(t, http.MethodGet, bookPath, cookieB, nil)
 	if code != http.StatusNotFound {
 		t.Fatalf("cross-user get: want 404, got %d: %s", code, body)
@@ -350,7 +425,7 @@ func TestContractEndToEnd(t *testing.T) {
 	}
 
 	// --- 402: force A's credits to 0, render must be 402 and NOT call generator ---
-	if _, err := app.db.Exec("UPDATE users SET credits = 0 WHERE nickname = ?", "小明"); err != nil {
+	if _, err := app.db.Exec("UPDATE users SET credits = 0 WHERE username = ?", "xiaoming"); err != nil {
 		t.Fatalf("zero credits: %v", err)
 	}
 	renderPath := "/api/v1/panels/" + itoa(panelID) + "/render"
@@ -364,10 +439,10 @@ func TestContractEndToEnd(t *testing.T) {
 }
 
 // login posts credentials and returns the session cookie header value.
-func (a *testApp) login(t *testing.T, nickname, password string) string {
+func (a *testApp) login(t *testing.T, username, password string) string {
 	t.Helper()
 	req, _ := http.NewRequest(http.MethodPost, a.server.URL+"/api/v1/login",
-		bytes.NewReader(mustMarshal(t, map[string]string{"nickname": nickname, "password": password})))
+		bytes.NewReader(mustMarshal(t, map[string]string{"username": username, "password": password})))
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := a.server.Client().Do(req)

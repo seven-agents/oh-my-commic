@@ -130,6 +130,52 @@ func TestLoadCreditOverrides(t *testing.T) {
 	}
 }
 
+func TestLoadAdminAndInviteCode(t *testing.T) {
+	setKeys(t)
+	os.Setenv("ADMIN_USERNAME", "admin")
+	os.Setenv("ADMIN_PASSWORD", "Passw0rd")
+	os.Setenv("ADMIN_EMAIL", "a@b.com")
+	os.Setenv("INVITE_CODE", "welcome123")
+	defer os.Unsetenv("ADMIN_USERNAME")
+	defer os.Unsetenv("ADMIN_PASSWORD")
+	defer os.Unsetenv("ADMIN_EMAIL")
+	defer os.Unsetenv("INVITE_CODE")
+
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.AdminUsername != "admin" {
+		t.Fatalf("ADMIN_USERNAME not loaded: %q", c.AdminUsername)
+	}
+	if c.AdminPassword != "Passw0rd" {
+		t.Fatalf("ADMIN_PASSWORD not loaded: %q", c.AdminPassword)
+	}
+	if c.AdminEmail != "a@b.com" {
+		t.Fatalf("ADMIN_EMAIL not loaded: %q", c.AdminEmail)
+	}
+	if c.InviteCode != "welcome123" {
+		t.Fatalf("INVITE_CODE not loaded: %q", c.InviteCode)
+	}
+}
+
+func TestLoadAdminAndInviteCodeDefaults(t *testing.T) {
+	setKeys(t)
+	os.Unsetenv("ADMIN_USERNAME")
+	os.Unsetenv("ADMIN_PASSWORD")
+	os.Unsetenv("ADMIN_EMAIL")
+	os.Unsetenv("INVITE_CODE")
+
+	c, err := Load()
+	if err != nil {
+		t.Fatalf("missing admin/invite env must not fail Load: %v", err)
+	}
+	if c.AdminUsername != "" || c.AdminPassword != "" || c.AdminEmail != "" || c.InviteCode != "" {
+		t.Fatalf("unset admin/invite env should be empty, got user=%q pass=%q email=%q invite=%q",
+			c.AdminUsername, c.AdminPassword, c.AdminEmail, c.InviteCode)
+	}
+}
+
 func TestLoadRenderMaxRefs(t *testing.T) {
 	setKeys(t)
 	defer os.Unsetenv("RENDER_MAX_REFS")

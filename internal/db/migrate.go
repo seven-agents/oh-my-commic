@@ -12,7 +12,13 @@ import (
 var schemaStatements = []string{
 	`CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  nickname TEXT NOT NULL UNIQUE,
+  nickname TEXT NOT NULL DEFAULT '',
+  username TEXT NOT NULL DEFAULT '',
+  email TEXT NOT NULL DEFAULT '',
+  role TEXT NOT NULL DEFAULT 'user',
+  age INTEGER NOT NULL DEFAULT 0,
+  gender TEXT NOT NULL DEFAULT '',
+  avatar_url TEXT NOT NULL DEFAULT '',
   password_hash TEXT NOT NULL,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 )`,
@@ -83,6 +89,10 @@ var schemaStatements = []string{
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 )`,
+	`CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT NOT NULL DEFAULT ''
+)`,
 }
 
 // alterStatements holds idempotent ADD COLUMN migrations applied AFTER the
@@ -99,6 +109,22 @@ var alterStatements = []string{
 	`ALTER TABLE chapters ADD COLUMN conversation TEXT NOT NULL DEFAULT '[]'`,
 	`ALTER TABLE chapters ADD COLUMN panel_count INTEGER NOT NULL DEFAULT 6`,
 	`ALTER TABLE users ADD COLUMN credits INTEGER NOT NULL DEFAULT 100`,
+	`ALTER TABLE users ADD COLUMN username TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'user'`,
+	`ALTER TABLE users ADD COLUMN age INTEGER NOT NULL DEFAULT 0`,
+	`ALTER TABLE users ADD COLUMN gender TEXT NOT NULL DEFAULT ''`,
+	`ALTER TABLE users ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''`,
+}
+
+// indexStatements holds idempotent CREATE INDEX migrations applied AFTER the
+// ADD COLUMN migrations (so the target columns are guaranteed to exist). The
+// unique indexes are partial (WHERE col <> '') so that pre-existing rows with an
+// empty username/email — the default for legacy accounts — do not collide; only
+// non-empty values are constrained to be unique.
+var indexStatements = []string{
+	`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username) WHERE username <> ''`,
+	`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email) WHERE email <> ''`,
 }
 
 // Migrate creates all application tables if they do not already exist, then
@@ -112,6 +138,11 @@ func Migrate(d *sql.DB) error {
 	}
 	for _, stmt := range alterStatements {
 		if _, err := d.Exec(stmt); err != nil && !isDuplicateColumn(err) {
+			return fmt.Errorf("exec migration: %w", err)
+		}
+	}
+	for _, stmt := range indexStatements {
+		if _, err := d.Exec(stmt); err != nil {
 			return fmt.Errorf("exec migration: %w", err)
 		}
 	}

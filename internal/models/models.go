@@ -9,7 +9,13 @@ package models
 // comicify each cost some credits, charged up front and refunded on failure).
 type User struct {
 	ID           int64  `json:"id"`
+	Username     string `json:"username"`
 	Nickname     string `json:"nickname"`
+	Email        string `json:"email"`
+	Role         string `json:"role"`
+	Age          int    `json:"age"`
+	Gender       string `json:"gender"`
+	AvatarURL    string `json:"avatarUrl"`
 	PasswordHash string `json:"-"`
 	CreatedAt    string `json:"createdAt"`
 	Credits      int    `json:"credits"`
