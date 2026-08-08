@@ -27,7 +27,7 @@ func mount(env *renderTestEnv, userID int64) http.Handler {
 			next.ServeHTTP(w, req.WithContext(ctx))
 		})
 	})
-	h.Mount(r)
+	r.Route("/api/v1", func(v1 chi.Router) { h.Mount(v1) })
 	return r
 }
 
@@ -38,7 +38,7 @@ func TestRenderHandlerOK(t *testing.T) {
 	srv := mount(env, 1)
 
 	req := httptest.NewRequest(http.MethodPost,
-		"/api/panels/"+strconv.FormatInt(sp.panelID, 10)+"/render", nil)
+		"/api/v1/panels/"+strconv.FormatInt(sp.panelID, 10)+"/render", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -62,7 +62,7 @@ func TestRenderHandlerCrossUser404(t *testing.T) {
 	srv := mount(env, 2) // user 2 hits user 1's panel
 
 	req := httptest.NewRequest(http.MethodPost,
-		"/api/panels/"+strconv.FormatInt(sp.panelID, 10)+"/render", nil)
+		"/api/v1/panels/"+strconv.FormatInt(sp.panelID, 10)+"/render", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -76,7 +76,7 @@ func TestRenderHandlerBadID400(t *testing.T) {
 	env := newRenderTestEnv(t)
 	srv := mount(env, 1)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/panels/0/render", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/panels/0/render", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -94,7 +94,7 @@ func TestRenderHandlerInsufficientCredits402(t *testing.T) {
 	srv := mount(env, 1)
 
 	req := httptest.NewRequest(http.MethodPost,
-		"/api/panels/"+strconv.FormatInt(sp.panelID, 10)+"/render", nil)
+		"/api/v1/panels/"+strconv.FormatInt(sp.panelID, 10)+"/render", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 
@@ -118,7 +118,7 @@ func TestRenderHandlerGenError502(t *testing.T) {
 	srv := mount(env, 1)
 
 	req := httptest.NewRequest(http.MethodPost,
-		"/api/panels/"+strconv.FormatInt(sp.panelID, 10)+"/render", nil)
+		"/api/v1/panels/"+strconv.FormatInt(sp.panelID, 10)+"/render", nil)
 	w := httptest.NewRecorder()
 	srv.ServeHTTP(w, req)
 

@@ -24,7 +24,7 @@ func post(t *testing.T, h http.Handler, path, body string) *httptest.ResponseRec
 func TestHandlerRegisterThenLoginSetsCookie(t *testing.T) {
 	h := newTestHandler(t)
 
-	rec := post(t, h, "/api/register", `{"nickname":"小刚","password":"pw123456"}`)
+	rec := post(t, h, "/api/v1/register", `{"nickname":"小刚","password":"pw123456"}`)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("register status = %d, want 201; body=%s", rec.Code, rec.Body.String())
 	}
@@ -32,7 +32,7 @@ func TestHandlerRegisterThenLoginSetsCookie(t *testing.T) {
 		t.Fatalf("register response leaked password field: %s", rec.Body.String())
 	}
 
-	rec = post(t, h, "/api/login", `{"nickname":"小刚","password":"pw123456"}`)
+	rec = post(t, h, "/api/v1/login", `{"nickname":"小刚","password":"pw123456"}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("login status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 	}
@@ -59,8 +59,8 @@ func TestHandlerRegisterThenLoginSetsCookie(t *testing.T) {
 
 func TestHandlerDuplicateNicknameReturns409(t *testing.T) {
 	h := newTestHandler(t)
-	_ = post(t, h, "/api/register", `{"nickname":"重复","password":"pw123456"}`)
-	rec := post(t, h, "/api/register", `{"nickname":"重复","password":"other"}`)
+	_ = post(t, h, "/api/v1/register", `{"nickname":"重复","password":"pw123456"}`)
+	rec := post(t, h, "/api/v1/register", `{"nickname":"重复","password":"other"}`)
 	if rec.Code != http.StatusConflict {
 		t.Fatalf("duplicate register status = %d, want 409", rec.Code)
 	}
@@ -68,8 +68,8 @@ func TestHandlerDuplicateNicknameReturns409(t *testing.T) {
 
 func TestHandlerBadCredentialsReturns401(t *testing.T) {
 	h := newTestHandler(t)
-	_ = post(t, h, "/api/register", `{"nickname":"张三","password":"pw123456"}`)
-	rec := post(t, h, "/api/login", `{"nickname":"张三","password":"nope"}`)
+	_ = post(t, h, "/api/v1/register", `{"nickname":"张三","password":"pw123456"}`)
+	rec := post(t, h, "/api/v1/login", `{"nickname":"张三","password":"nope"}`)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("bad login status = %d, want 401", rec.Code)
 	}
@@ -77,7 +77,7 @@ func TestHandlerBadCredentialsReturns401(t *testing.T) {
 
 func TestHandlerEmptyBodyReturns400(t *testing.T) {
 	h := newTestHandler(t)
-	rec := post(t, h, "/api/register", `{"nickname":"","password":""}`)
+	rec := post(t, h, "/api/v1/register", `{"nickname":"","password":""}`)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("empty body status = %d, want 400", rec.Code)
 	}
@@ -85,8 +85,8 @@ func TestHandlerEmptyBodyReturns400(t *testing.T) {
 
 func TestHandlerLogoutRevokesSession(t *testing.T) {
 	h := newTestHandler(t)
-	_ = post(t, h, "/api/register", `{"nickname":"登出","password":"pw123456"}`)
-	loginRec := post(t, h, "/api/login", `{"nickname":"登出","password":"pw123456"}`)
+	_ = post(t, h, "/api/v1/register", `{"nickname":"登出","password":"pw123456"}`)
+	loginRec := post(t, h, "/api/v1/login", `{"nickname":"登出","password":"pw123456"}`)
 
 	var token string
 	for _, c := range loginRec.Result().Cookies() {
@@ -98,7 +98,7 @@ func TestHandlerLogoutRevokesSession(t *testing.T) {
 		t.Fatal("expected session cookie from login")
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/logout", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/logout", nil)
 	req.AddCookie(&http.Cookie{Name: sessionCookie, Value: token})
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, req)

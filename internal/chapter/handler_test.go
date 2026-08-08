@@ -42,7 +42,7 @@ func newHandlerTestEnv(t *testing.T) *handlerTestEnv {
 	h := NewHandler(svc)
 
 	r := chi.NewRouter()
-	h.Mount(r)
+	r.Route("/api/v1", func(v1 chi.Router) { h.Mount(v1) })
 	return &handlerTestEnv{books: books, router: r}
 }
 
@@ -69,7 +69,7 @@ func TestHTTPCreateListGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create book: %v", err)
 	}
-	base := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/chapters"
+	base := "/api/v1/books/" + strconv.FormatInt(b.ID, 10) + "/chapters"
 
 	rec := env.do(1, http.MethodPost, base, titleRequest{Title: "第一章"})
 	if rec.Code != http.StatusCreated {
@@ -95,7 +95,7 @@ func TestHTTPCreateListGet(t *testing.T) {
 		t.Fatalf("expected 1 chapter, got %d", len(list))
 	}
 
-	rec = env.do(1, http.MethodGet, "/api/chapters/"+strconv.FormatInt(created.ID, 10), nil)
+	rec = env.do(1, http.MethodGet, "/api/v1/chapters/"+strconv.FormatInt(created.ID, 10), nil)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("get expected 200, got %d", rec.Code)
 	}
@@ -109,12 +109,12 @@ func TestHTTPSetStatusFlowAndIllegal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create book: %v", err)
 	}
-	create := env.do(1, http.MethodPost, "/api/books/"+strconv.FormatInt(b.ID, 10)+"/chapters", titleRequest{Title: "章"})
+	create := env.do(1, http.MethodPost, "/api/v1/books/"+strconv.FormatInt(b.ID, 10)+"/chapters", titleRequest{Title: "章"})
 	var c models.Chapter
 	if err := json.Unmarshal(create.Body.Bytes(), &c); err != nil {
 		t.Fatalf("decode created: %v", err)
 	}
-	statusPath := "/api/chapters/" + strconv.FormatInt(c.ID, 10) + "/status"
+	statusPath := "/api/v1/chapters/" + strconv.FormatInt(c.ID, 10) + "/status"
 
 	rec := env.do(1, http.MethodPut, statusPath, statusRequest{Status: "storyboarding"})
 	if rec.Code != http.StatusOK {
@@ -142,7 +142,7 @@ func TestHTTPCrossUser404(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create book: %v", err)
 	}
-	base := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/chapters"
+	base := "/api/v1/books/" + strconv.FormatInt(b.ID, 10) + "/chapters"
 	create := env.do(1, http.MethodPost, base, titleRequest{Title: "章"})
 	var c models.Chapter
 	if err := json.Unmarshal(create.Body.Bytes(), &c); err != nil {
@@ -156,9 +156,9 @@ func TestHTTPCrossUser404(t *testing.T) {
 	}{
 		{http.MethodGet, base, nil},
 		{http.MethodPost, base, titleRequest{Title: "越权"}},
-		{http.MethodGet, "/api/chapters/" + chID, nil},
-		{http.MethodPut, "/api/chapters/" + chID + "/status", statusRequest{Status: "storyboarding"}},
-		{http.MethodDelete, "/api/chapters/" + chID, nil},
+		{http.MethodGet, "/api/v1/chapters/" + chID, nil},
+		{http.MethodPut, "/api/v1/chapters/" + chID + "/status", statusRequest{Status: "storyboarding"}},
+		{http.MethodDelete, "/api/v1/chapters/" + chID, nil},
 	}
 	for _, tc := range cases {
 		rec := env.do(2, tc.method, tc.path, tc.body)
@@ -177,13 +177,13 @@ func TestHTTPDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create book: %v", err)
 	}
-	base := "/api/books/" + strconv.FormatInt(b.ID, 10) + "/chapters"
+	base := "/api/v1/books/" + strconv.FormatInt(b.ID, 10) + "/chapters"
 	create := env.do(1, http.MethodPost, base, titleRequest{Title: "章"})
 	var c models.Chapter
 	if err := json.Unmarshal(create.Body.Bytes(), &c); err != nil {
 		t.Fatalf("decode created: %v", err)
 	}
-	chPath := "/api/chapters/" + strconv.FormatInt(c.ID, 10)
+	chPath := "/api/v1/chapters/" + strconv.FormatInt(c.ID, 10)
 
 	if rec := env.do(1, http.MethodDelete, chPath, nil); rec.Code != http.StatusOK {
 		t.Fatalf("owner delete expected 200, got %d", rec.Code)
@@ -202,10 +202,10 @@ func TestHTTPDelete(t *testing.T) {
 func TestHTTPBadInput(t *testing.T) {
 	env := newHandlerTestEnv(t)
 
-	if rec := env.do(1, http.MethodGet, "/api/books/abc/chapters", nil); rec.Code != http.StatusBadRequest {
+	if rec := env.do(1, http.MethodGet, "/api/v1/books/abc/chapters", nil); rec.Code != http.StatusBadRequest {
 		t.Fatalf("bad bookId expected 400, got %d", rec.Code)
 	}
-	if rec := env.do(1, http.MethodGet, "/api/chapters/abc", nil); rec.Code != http.StatusBadRequest {
+	if rec := env.do(1, http.MethodGet, "/api/v1/chapters/abc", nil); rec.Code != http.StatusBadRequest {
 		t.Fatalf("bad chapter id expected 400, got %d", rec.Code)
 	}
 
@@ -213,7 +213,7 @@ func TestHTTPBadInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create book: %v", err)
 	}
-	req := httptest.NewRequest(http.MethodPost, "/api/books/"+strconv.FormatInt(b.ID, 10)+"/chapters", bytes.NewBufferString("{bad json"))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/books/"+strconv.FormatInt(b.ID, 10)+"/chapters", bytes.NewBufferString("{bad json"))
 	req = req.WithContext(auth.WithUserID(req.Context(), 1))
 	rec := httptest.NewRecorder()
 	env.router.ServeHTTP(rec, req)

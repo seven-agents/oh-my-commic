@@ -26,20 +26,20 @@ func NewHandler(svc *Service) *Handler {
 
 // Mount registers the panel endpoints onto r using their absolute paths.
 //
-//	GET /api/chapters/{id}/panels
-//	PUT /api/chapters/{id}/panels   (bulk replace)
-//	PUT /api/panels/{id}
+//	GET /api/v1/chapters/{id}/panels
+//	PUT /api/v1/chapters/{id}/panels   (bulk replace)
+//	PUT /api/v1/panels/{id}
 //
 // It deliberately does NOT attach auth.RequireUser: the caller mounts these
 // routes inside a group already wrapped with RequireUser, so every handler can
 // rely on a valid user ID being present in the context.
 func (h *Handler) Mount(r chi.Router) {
-	r.Get("/api/chapters/{id}/panels", h.List)
-	r.Put("/api/chapters/{id}/panels", h.Replace)
-	r.Put("/api/panels/{id}", h.Update)
+	r.Get("/chapters/{id}/panels", h.List)
+	r.Put("/chapters/{id}/panels", h.Replace)
+	r.Put("/panels/{id}", h.Update)
 }
 
-// List handles GET /api/chapters/{id}/panels.
+// List handles GET /api/v1/chapters/{id}/panels.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
 	chapterID, ok := parseID(w, r, "id", "无效的章节 ID")
@@ -54,7 +54,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, list)
 }
 
-// Replace handles PUT /api/chapters/{id}/panels. The body is a JSON array of
+// Replace handles PUT /api/v1/chapters/{id}/panels. The body is a JSON array of
 // panels; their order is reassigned to 0..n-1 on persistence.
 func (h *Handler) Replace(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
@@ -74,7 +74,7 @@ func (h *Handler) Replace(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, out)
 }
 
-// Update handles PUT /api/panels/{id}. The body carries the editable fields.
+// Update handles PUT /api/v1/panels/{id}. The body carries the editable fields.
 func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
 	panelID, ok := parseID(w, r, "id", "无效的分镜 ID")

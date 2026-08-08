@@ -25,23 +25,23 @@ func NewHandler(svc *Service) *Handler {
 
 // Mount registers the chapter endpoints onto r using their absolute paths.
 //
-//	GET  /api/books/{bookId}/chapters
-//	POST /api/books/{bookId}/chapters
-//	POST /api/books/{bookId}/cover-chapter
-//	GET    /api/chapters/{id}
-//	PUT    /api/chapters/{id}/status
-//	DELETE /api/chapters/{id}
+//	GET  /api/v1/books/{bookId}/chapters
+//	POST /api/v1/books/{bookId}/chapters
+//	POST /api/v1/books/{bookId}/cover-chapter
+//	GET    /api/v1/chapters/{id}
+//	PUT    /api/v1/chapters/{id}/status
+//	DELETE /api/v1/chapters/{id}
 //
 // It deliberately does NOT attach auth.RequireUser: the caller mounts these
 // routes inside a group already wrapped with RequireUser, so every handler can
 // rely on a valid user ID being present in the context.
 func (h *Handler) Mount(r chi.Router) {
-	r.Get("/api/books/{bookId}/chapters", h.List)
-	r.Post("/api/books/{bookId}/chapters", h.Create)
-	r.Post("/api/books/{bookId}/cover-chapter", h.EnsureCover)
-	r.Get("/api/chapters/{id}", h.Get)
-	r.Put("/api/chapters/{id}/status", h.SetStatus)
-	r.Delete("/api/chapters/{id}", h.Delete)
+	r.Get("/books/{bookId}/chapters", h.List)
+	r.Post("/books/{bookId}/chapters", h.Create)
+	r.Post("/books/{bookId}/cover-chapter", h.EnsureCover)
+	r.Get("/chapters/{id}", h.Get)
+	r.Put("/chapters/{id}/status", h.SetStatus)
+	r.Delete("/chapters/{id}", h.Delete)
 }
 
 // titleRequest is the body of a create-chapter request.
@@ -54,7 +54,7 @@ type statusRequest struct {
 	Status string `json:"status"`
 }
 
-// List handles GET /api/books/{bookId}/chapters.
+// List handles GET /api/v1/books/{bookId}/chapters.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
 	bookID, ok := parseBookID(w, r)
@@ -69,7 +69,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, list)
 }
 
-// Create handles POST /api/books/{bookId}/chapters.
+// Create handles POST /api/v1/books/{bookId}/chapters.
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
 	bookID, ok := parseBookID(w, r)
@@ -88,7 +88,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, created)
 }
 
-// EnsureCover handles POST /api/books/{bookId}/cover-chapter. It returns the
+// EnsureCover handles POST /api/v1/books/{bookId}/cover-chapter. It returns the
 // book's single cover chapter, creating it on first call. The response is 200
 // whether the cover chapter was found or freshly created.
 func (h *Handler) EnsureCover(w http.ResponseWriter, r *http.Request) {
@@ -105,7 +105,7 @@ func (h *Handler) EnsureCover(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, cover)
 }
 
-// Get handles GET /api/chapters/{id}.
+// Get handles GET /api/v1/chapters/{id}.
 func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
 	id, ok := parseChapterID(w, r)
@@ -120,7 +120,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, c)
 }
 
-// SetStatus handles PUT /api/chapters/{id}/status.
+// SetStatus handles PUT /api/v1/chapters/{id}/status.
 func (h *Handler) SetStatus(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
 	id, ok := parseChapterID(w, r)
@@ -139,7 +139,7 @@ func (h *Handler) SetStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, updated)
 }
 
-// Delete handles DELETE /api/chapters/{id}. Deleting a chapter cascades to its
+// Delete handles DELETE /api/v1/chapters/{id}. Deleting a chapter cascades to its
 // panels at the database level. It returns 200 on success and 404 for a
 // cross-user or unknown chapter.
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {

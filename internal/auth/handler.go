@@ -24,40 +24,45 @@ type Handler struct {
 	svc *Service
 }
 
-// NewHandler returns an http.Handler exposing the auth routes:
+// NewHandler returns an http.Handler exposing the auth routes (mounted under the
+// caller's /api/v1 group):
 //
-//	POST /api/register
-//	POST /api/login
-//	POST /api/logout
+//	POST /register
+//	POST /login
+//	POST /logout
 //
 // The session store is taken from svc, so both share the same token map.
 func NewHandler(svc *Service) *Handler {
 	return &Handler{svc: svc}
 }
 
-// Mount registers the auth endpoints onto r using their absolute paths. These
-// routes are public (no authentication middleware) so the enclosing router must
-// not wrap them with auth.RequireUser.
+// Mount registers the auth endpoints onto r using resource-relative paths. The
+// caller mounts these under the /api/v1 group, so the effective paths are
+// /api/v1/register etc. These routes are public (no authentication middleware)
+// so the enclosing router must not wrap them with auth.RequireUser.
 func (h *Handler) Mount(r chi.Router) {
-	r.Post("/api/register", h.Register)
-	r.Post("/api/login", h.Login)
-	r.Post("/api/logout", h.Logout)
+	r.Post("/register", h.Register)
+	r.Post("/login", h.Login)
+	r.Post("/logout", h.Logout)
 }
 
 // MountProtected registers the auth endpoints that require an authenticated
 // session. The caller must mount these inside a group already wrapped with
-// RequireUser so h.Me can rely on a valid user ID in the request context.
+// RequireUser so h.Me can rely on a valid user ID in the request context. The
+// effective path is /api/v1/me.
 //
-//	GET /api/me
+//	GET /me
 func (h *Handler) MountProtected(r chi.Router) {
-	r.Get("/api/me", h.Me)
+	r.Get("/me", h.Me)
 }
 
-// Routes builds a chi router mounting the auth endpoints. It is separated from
-// ServeHTTP so callers can mount these routes into a larger router later.
+// Routes builds a chi router mounting the public auth endpoints under the
+// versioned /api/v1 prefix (so ServeHTTP and standalone use match the effective
+// production paths). It is separated from ServeHTTP so callers can mount these
+// routes into a larger router later.
 func (h *Handler) Routes() http.Handler {
 	r := chi.NewRouter()
-	h.Mount(r)
+	r.Route("/api/v1", func(v1 chi.Router) { h.Mount(v1) })
 	return r
 }
 
@@ -66,7 +71,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	h.Routes().ServeHTTP(w, r)
 }
 
-// Register handles POST /api/register.
+// Register handles POST /api/v1/register.
 func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	creds, ok := decodeCredentials(w, r)
 	if !ok {
@@ -86,7 +91,7 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, u)
 }
 
-// Login handles POST /api/login. On success it sets an HttpOnly session cookie
+// Login handles POST /api/v1/login. On success it sets an HttpOnly session cookie
 // and returns the user as JSON.
 func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	creds, ok := decodeCredentials(w, r)
@@ -105,7 +110,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, u)
 }
 
-// Me handles GET /api/me. It returns the currently authenticated user (including
+// Me handles GET /api/v1/me. It returns the currently authenticated user (including
 // the live credit balance, never the password hash) resolved from the session
 // context populated by RequireUser.
 func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
@@ -120,7 +125,7 @@ func (h *Handler) Me(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, u)
 }
 
-// Logout handles POST /api/logout. It revokes the current session (if any) and
+// Logout handles POST /api/v1/logout. It revokes the current session (if any) and
 // clears the cookie. Logging out without a session is treated as success.
 func (h *Handler) Logout(w http.ResponseWriter, r *http.Request) {
 	if c, err := r.Cookie(sessionCookie); err == nil {

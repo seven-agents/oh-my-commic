@@ -31,36 +31,37 @@ func NewHandler(svc *Service) *Handler {
 	return &Handler{svc: svc}
 }
 
-// Routes builds a chi subrouter exposing the five book endpoints:
+// Routes builds a chi subrouter exposing the five book endpoints (mounted under
+// the caller's /api/v1 group):
 //
-//	GET    /api/books
-//	POST   /api/books
-//	GET    /api/books/{id}
-//	PUT    /api/books/{id}
-//	DELETE /api/books/{id}
+//	GET    /api/v1/books
+//	POST   /api/v1/books
+//	GET    /api/v1/books/{id}
+//	PUT    /api/v1/books/{id}
+//	DELETE /api/v1/books/{id}
 //
 // It deliberately does NOT attach auth.RequireUser: the caller mounts this
-// subrouter under an /api group already wrapped with RequireUser, so every
+// subrouter under an /api/v1 group already wrapped with RequireUser, so every
 // handler can rely on a valid user ID being present in the context.
 func (h *Handler) Routes() chi.Router {
 	r := chi.NewRouter()
-	h.Mount(r)
+	r.Route("/api/v1", func(v1 chi.Router) { h.Mount(v1) })
 	return r
 }
 
-// Mount registers the five book endpoints onto r using their absolute paths.
-// Like Routes, it does NOT attach auth.RequireUser: the caller must mount these
-// routes inside a group already wrapped with RequireUser so a valid user ID is
-// present in the request context.
+// Mount registers the five book endpoints onto r using resource-relative paths
+// (the caller mounts them under /api/v1). Like Routes, it does NOT attach
+// auth.RequireUser: the caller must mount these routes inside a group already
+// wrapped with RequireUser so a valid user ID is present in the request context.
 func (h *Handler) Mount(r chi.Router) {
-	r.Get("/api/books", h.List)
-	r.Post("/api/books", h.Create)
-	r.Get("/api/books/{id}", h.Get)
-	r.Put("/api/books/{id}", h.Update)
-	r.Delete("/api/books/{id}", h.Delete)
+	r.Get("/books", h.List)
+	r.Post("/books", h.Create)
+	r.Get("/books/{id}", h.Get)
+	r.Put("/books/{id}", h.Update)
+	r.Delete("/books/{id}", h.Delete)
 }
 
-// List handles GET /api/books.
+// List handles GET /api/v1/books.
 func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
 
@@ -72,7 +73,7 @@ func (h *Handler) List(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, books)
 }
 
-// Create handles POST /api/books.
+// Create handles POST /api/v1/books.
 func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
 
@@ -89,7 +90,7 @@ func (h *Handler) Create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, b)
 }
 
-// Get handles GET /api/books/{id}.
+// Get handles GET /api/v1/books/{id}.
 func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
 
@@ -106,7 +107,7 @@ func (h *Handler) Get(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, b)
 }
 
-// Update handles PUT /api/books/{id}.
+// Update handles PUT /api/v1/books/{id}.
 func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
 
@@ -128,7 +129,7 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, b)
 }
 
-// Delete handles DELETE /api/books/{id}.
+// Delete handles DELETE /api/v1/books/{id}.
 func (h *Handler) Delete(w http.ResponseWriter, r *http.Request) {
 	userID := auth.UserID(r.Context())
 
