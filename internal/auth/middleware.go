@@ -39,6 +39,23 @@ func RequireUser(sess *Session) func(http.Handler) http.Handler {
 	}
 }
 
+// OptionalUser returns middleware for public endpoints that behave differently
+// for authenticated users. It resolves the session cookie like RequireUser but
+// NEVER rejects: a missing or unknown session simply passes through with no user
+// ID in context (auth.UserID returns 0). A valid session injects the user ID so
+// downstream handlers can personalize (e.g. compute a per-user "liked" flag or a
+// stable viewer key) without gating access.
+func OptionalUser(sess *Session) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if userID, ok := resolveUser(sess, r); ok {
+				r = r.WithContext(context.WithValue(r.Context(), userIDKey, userID))
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // resolveUser reads the session cookie from r and resolves it to a user ID via
 // sess. It returns ok=false when the cookie is missing or the token is unknown,
 // so callers can uniformly answer 401. It is the shared token-parsing logic for
