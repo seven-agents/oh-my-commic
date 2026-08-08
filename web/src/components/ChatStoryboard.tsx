@@ -9,9 +9,15 @@ import type { AssetIndex } from './chapter/assetLookup'
 const INTRO =
   '嗨！我是你的 AI 小助手～给我讲讲你的故事吧，比如：棉花糖在森林里等妈妈回家～'
 
+// 封面模式下的引导词：只画一格封面。
+const COVER_INTRO =
+  '用一句话描述这本书的封面吧，比如：小狐狸抱着一颗星星～'
+
 // 可选的目标分镜格数，默认 6。也可以直接在对话里说“分成4格”。
 const PANEL_COUNT_OPTIONS = [4, 6, 8] as const
 const DEFAULT_PANEL_COUNT = 6
+// 封面固定 1 格。
+const COVER_PANEL_COUNT = 1
 
 type StoryboardChatReply = {
   reply: string
@@ -24,6 +30,8 @@ type ChatStoryboardProps = {
   index: AssetIndex
   onPanelsChange: (panels: Panel[]) => void
   onConfirm: () => void
+  // 封面模式：隐藏分镜数选择器，始终传 panelCount=1，文案偏封面。
+  coverMode?: boolean
 }
 
 // Stage ① 讲故事：左侧对话、右侧实时结构化分镜。每轮对话都会返回并持久化全量分镜。
@@ -33,6 +41,7 @@ export function ChatStoryboard({
   index,
   onPanelsChange,
   onConfirm,
+  coverMode = false,
 }: ChatStoryboardProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [draft, setDraft] = useState('')
@@ -56,7 +65,7 @@ export function ChatStoryboard({
     try {
       const res = await api.post<StoryboardChatReply>(
         `/api/chapters/${chapterId}/storyboard-chat`,
-        { messages: next, panelCount },
+        { messages: next, panelCount: coverMode ? COVER_PANEL_COUNT : panelCount },
       )
       setMessages([...next, { role: 'assistant', content: res.reply }])
       onPanelsChange(res.panels ?? [])
@@ -76,7 +85,7 @@ export function ChatStoryboard({
           ref={listRef}
           className="flex max-h-[460px] min-h-[300px] flex-col gap-3 overflow-y-auto rounded-3xl bg-cream/60 p-4"
         >
-          <Bubble role="assistant" content={INTRO} />
+          <Bubble role="assistant" content={coverMode ? COVER_INTRO : INTRO} />
           {messages.map((m, i) => (
             <Bubble key={i} role={m.role} content={m.content} />
           ))}
@@ -95,11 +104,13 @@ export function ChatStoryboard({
           </p>
         )}
 
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold text-ink-soft">分几格：</span>
-          <PanelCountPicker value={panelCount} onChange={setPanelCount} disabled={sending} />
-          <span className="text-xs text-ink-soft/70">也可以直接对我说「分成4格」～</span>
-        </div>
+        {!coverMode && (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-semibold text-ink-soft">分几格：</span>
+            <PanelCountPicker value={panelCount} onChange={setPanelCount} disabled={sending} />
+            <span className="text-xs text-ink-soft/70">也可以直接对我说「分成4格」～</span>
+          </div>
+        )}
 
         <div className="flex items-end gap-2">
           <textarea
@@ -122,11 +133,13 @@ export function ChatStoryboard({
 
         <div className="flex flex-col items-center gap-2 border-t border-ink/5 pt-4">
           <Button onClick={onConfirm} disabled={panels.length === 0} className="text-base">
-            ✨ 确认分镜，开始画图 →
+            {coverMode ? '✨ 确认封面，开始画图 →' : '✨ 确认分镜，开始画图 →'}
           </Button>
           {panels.length === 0 && (
             <p className="text-center text-xs text-ink-soft/70">
-              先和小助手聊聊你的故事，分镜会自动出现在右边～
+              {coverMode
+                ? '先和小助手描述封面，画面会自动出现在右边～'
+                : '先和小助手聊聊你的故事，分镜会自动出现在右边～'}
             </p>
           )}
         </div>

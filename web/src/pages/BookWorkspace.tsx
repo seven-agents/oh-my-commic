@@ -100,9 +100,13 @@ export default function BookWorkspace() {
                 onAssetsChanged={refetchAssets}
               />
               <ChapterList
-                bookId={bookId}
+                book={book}
                 chapters={chapters}
-                onCreated={(ch) => setChapters((prev) => [...prev, ch])}
+                onCreated={(ch) =>
+                  setChapters((prev) =>
+                    prev.some((c) => c.id === ch.id) ? prev : [...prev, ch],
+                  )
+                }
               />
             </div>
           </>

@@ -34,7 +34,10 @@ export default function BookReader() {
           api.get<Book>(`/api/books/${bookId}`),
           api.get<Chapter[]>(`/api/books/${bookId}/chapters`),
         ])
-        const ordered = [...(chapters ?? [])].sort((a, b) => a.order - b.order)
+        // 封面章由封面页(page 0)代表，不再单独成一页。
+        const ordered = [...(chapters ?? [])]
+          .filter((ch) => !ch.isCover)
+          .sort((a, b) => a.order - b.order)
         const panelLists = await Promise.all(
           ordered.map((ch) => api.get<Panel[]>(`/api/chapters/${ch.id}/panels`)),
         )
