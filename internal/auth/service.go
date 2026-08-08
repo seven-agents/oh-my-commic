@@ -41,13 +41,18 @@ func (s *Service) Sessions() *Session { return s.sess }
 
 // Register hashes the password with bcrypt and creates a new user.
 //
-// It returns ErrNicknameTaken if the nickname is already in use. The taken
-// check is done with a ByNickname pre-check: there is a TOCTOU window between
-// the check and the insert, but the users.nickname UNIQUE constraint remains
-// the authoritative guard — a racing duplicate insert still fails at the DB and
+// It returns ErrNicknameTaken if the login name is already in use. The taken
+// check is done with a ByUsername pre-check: there is a TOCTOU window between
+// the check and the insert, but the users.username unique index remains the
+// authoritative guard — a racing duplicate insert still fails at the DB and
 // surfaces as a (non-sentinel) create error rather than a corrupt second row.
+//
+// NOTE (Task 4 stub): until Task 6 splits login username from display nickname,
+// the single incoming name is used as both the account's username (login key)
+// and its nickname. The signature is unchanged so service/handler tests and
+// wiring keep compiling; Task 6 will introduce the real username/email flow.
 func (s *Service) Register(nickname, password string) (models.User, error) {
-	if _, err := s.repo.ByNickname(nickname); err == nil {
+	if _, err := s.repo.ByUsername(nickname); err == nil {
 		return models.User{}, ErrNicknameTaken
 	}
 
@@ -56,8 +61,17 @@ func (s *Service) Register(nickname, password string) (models.User, error) {
 		return models.User{}, fmt.Errorf("hash password: %w", err)
 	}
 
-	u, err := s.repo.Create(nickname, string(hash), s.signupCredits)
+	u, err := s.repo.Create(NewUser{
+		Username:     nickname,
+		PasswordHash: string(hash),
+		Nickname:     nickname,
+		Role:         "user",
+		Credits:      s.signupCredits,
+	})
 	if err != nil {
+		if errors.Is(err, ErrUsernameTaken) {
+			return models.User{}, ErrNicknameTaken
+		}
 		return models.User{}, fmt.Errorf("register %q: %w", nickname, err)
 	}
 	return u, nil
@@ -75,10 +89,13 @@ func (s *Service) Me(userID int64) (models.User, error) {
 }
 
 // Login verifies credentials and, on success, issues a session token bound to
-// the user's ID. On unknown nickname or password mismatch it returns
+// the user's ID. On unknown login name or password mismatch it returns
 // ErrInvalidCredentials without revealing which check failed.
+//
+// NOTE (Task 4 stub): the incoming name is treated as the account username
+// (login key); Task 6 will formalize the username/email login flow.
 func (s *Service) Login(nickname, password string) (token string, u models.User, err error) {
-	u, err = s.repo.ByNickname(nickname)
+	u, err = s.repo.ByUsername(nickname)
 	if err != nil {
 		return "", models.User{}, ErrInvalidCredentials
 	}
