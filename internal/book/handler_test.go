@@ -34,6 +34,22 @@ func do(t *testing.T, h *Handler, req *http.Request) *httptest.ResponseRecorder 
 	return rec
 }
 
+// createBook POSTs a book as userID through the handler and returns the decoded
+// created book, failing the test on any non-201 response.
+func createBook(t *testing.T, h *Handler, userID int64, jsonBody string) models.Book {
+	t.Helper()
+	req := asUser(httptest.NewRequest(http.MethodPost, "/api/v1/books", strings.NewReader(jsonBody)), userID)
+	rec := do(t, h, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("createBook status = %d, want 201: %s", rec.Code, rec.Body)
+	}
+	var created models.Book
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("createBook decode: %v", err)
+	}
+	return created
+}
+
 func TestHandlerCreateAndList(t *testing.T) {
 	h, _ := newTestHandler(t)
 
@@ -154,4 +170,49 @@ func TestHandlerNoUserContext(t *testing.T) {
 		t.Fatalf("anonymous get status = %d, want 404", rec.Code)
 	}
 	_ = b
+}
+
+func TestVisibilityEndpoint(t *testing.T) {
+	h, _ := newTestHandler(t)
+
+	created := createBook(t, h, 1, `{"title":"书","style":"","summary":""}`)
+
+	body := strings.NewReader(`{"isPublic":true}`)
+	req := asUser(httptest.NewRequest(http.MethodPut, "/api/v1/books/"+strconv.FormatInt(created.ID, 10)+"/visibility", body), 1)
+	rec := do(t, h, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var got models.Book
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !got.IsPublic || got.PublishedAt == "" {
+		t.Fatalf("expected book public with published_at, got %+v", got)
+	}
+}
+
+func TestVisibilityEndpointRejectsMissingField(t *testing.T) {
+	h, _ := newTestHandler(t)
+	created := createBook(t, h, 1, `{"title":"书","style":"","summary":""}`)
+
+	body := strings.NewReader(`{}`)
+	req := asUser(httptest.NewRequest(http.MethodPut, "/api/v1/books/"+strconv.FormatInt(created.ID, 10)+"/visibility", body), 1)
+	rec := do(t, h, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("missing isPublic should be 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestVisibilityEndpointNonOwner404(t *testing.T) {
+	h, _ := newTestHandler(t)
+	created := createBook(t, h, 1, `{"title":"书","style":"","summary":""}`)
+
+	body := strings.NewReader(`{"isPublic":true}`)
+	req := asUser(httptest.NewRequest(http.MethodPut, "/api/v1/books/"+strconv.FormatInt(created.ID, 10)+"/visibility", body), 2)
+	rec := do(t, h, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("non-owner should be 404, got %d: %s", rec.Code, rec.Body.String())
+	}
 }

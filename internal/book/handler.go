@@ -31,13 +31,14 @@ func NewHandler(svc *Service) *Handler {
 	return &Handler{svc: svc}
 }
 
-// Routes builds a chi subrouter exposing the five book endpoints (mounted under
-// the caller's /api/v1 group):
+// Routes builds a chi subrouter exposing the book endpoints (mounted under the
+// caller's /api/v1 group):
 //
 //	GET    /api/v1/books
 //	POST   /api/v1/books
 //	GET    /api/v1/books/{id}
 //	PUT    /api/v1/books/{id}
+//	PUT    /api/v1/books/{id}/visibility
 //	DELETE /api/v1/books/{id}
 //
 // It deliberately does NOT attach auth.RequireUser: the caller mounts this
@@ -49,7 +50,7 @@ func (h *Handler) Routes() chi.Router {
 	return r
 }
 
-// Mount registers the five book endpoints onto r using resource-relative paths
+// Mount registers the book endpoints onto r using resource-relative paths
 // (the caller mounts them under /api/v1). Like Routes, it does NOT attach
 // auth.RequireUser: the caller must mount these routes inside a group already
 // wrapped with RequireUser so a valid user ID is present in the request context.
@@ -58,6 +59,7 @@ func (h *Handler) Mount(r chi.Router) {
 	r.Post("/books", h.Create)
 	r.Get("/books/{id}", h.Get)
 	r.Put("/books/{id}", h.Update)
+	r.Put("/books/{id}/visibility", h.SetVisibility)
 	r.Delete("/books/{id}", h.Delete)
 }
 
@@ -124,6 +126,36 @@ func (h *Handler) Update(w http.ResponseWriter, r *http.Request) {
 	b, err := h.svc.Update(userID, bookID, in.Title, in.Style, in.Summary)
 	if err != nil {
 		writeServiceError(w, err, "更新书籍失败")
+		return
+	}
+	writeJSON(w, http.StatusOK, b)
+}
+
+// visibilityInput is the JSON body accepted by SetVisibility.
+type visibilityInput struct {
+	IsPublic *bool `json:"isPublic"`
+}
+
+// SetVisibility handles PUT /api/v1/books/{id}/visibility.
+func (h *Handler) SetVisibility(w http.ResponseWriter, r *http.Request) {
+	userID := auth.UserID(r.Context())
+
+	bookID, ok := parseID(w, r)
+	if !ok {
+		return
+	}
+
+	var in visibilityInput
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&in); err != nil || in.IsPublic == nil {
+		writeError(w, http.StatusBadRequest, "请求格式错误")
+		return
+	}
+
+	b, err := h.svc.SetVisibility(userID, bookID, *in.IsPublic)
+	if err != nil {
+		writeServiceError(w, err, "更新可见性失败")
 		return
 	}
 	writeJSON(w, http.StatusOK, b)

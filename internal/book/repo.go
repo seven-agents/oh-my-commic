@@ -157,6 +157,41 @@ func (r *Repo) SetCover(userID, bookID int64, coverURL string) (models.Book, err
 	return r.Get(userID, bookID)
 }
 
+// SetVisibility flips a book's public flag. Publishing (isPublic=true) stamps
+// published_at with the current time so the community feed can order by recency;
+// unpublishing leaves published_at untouched. It returns ErrNotFound when the
+// book does not exist or belongs to another user. The refreshed row is returned.
+func (r *Repo) SetVisibility(userID, bookID int64, isPublic bool) (models.Book, error) {
+	var res sql.Result
+	var err error
+	if isPublic {
+		res, err = r.db.Exec(
+			`UPDATE books
+			   SET is_public = 1, published_at = datetime('now'), updated_at = datetime('now')
+			 WHERE id = ? AND user_id = ?`,
+			bookID, userID,
+		)
+	} else {
+		res, err = r.db.Exec(
+			`UPDATE books
+			   SET is_public = 0, updated_at = datetime('now')
+			 WHERE id = ? AND user_id = ?`,
+			bookID, userID,
+		)
+	}
+	if err != nil {
+		return models.Book{}, fmt.Errorf("set visibility for book %d for user %d: %w", bookID, userID, err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return models.Book{}, fmt.Errorf("set visibility for book %d for user %d: rows affected: %w", bookID, userID, err)
+	}
+	if affected == 0 {
+		return models.Book{}, ErrNotFound
+	}
+	return r.Get(userID, bookID)
+}
+
 // Delete removes the book owned by userID. It returns ErrNotFound if the book
 // does not exist or belongs to another user.
 func (r *Repo) Delete(userID, bookID int64) error {

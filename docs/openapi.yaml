@@ -312,6 +312,40 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /api/v1/books/{id}/visibility:
+    parameters:
+      - $ref: "#/components/parameters/Id"
+    put:
+      tags: [books]
+      summary: 发布/下架书籍（社区可见性开关）
+      description: >
+        仅书籍 owner 可调用。isPublic=true 发布（记录发布时间供社区 feed 按新鲜度排序）；
+        isPublic=false 下架（保留发布时间）。非 owner 或不存在均返回 404。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [isPublic]
+              properties:
+                isPublic:
+                  type: boolean
+      responses:
+        "200":
+          description: 更新可见性后的书
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Book"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /api/v1/books/{bookId}/upload:
     parameters:
       - $ref: "#/components/parameters/BookId"
