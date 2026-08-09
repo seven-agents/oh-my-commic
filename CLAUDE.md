@@ -31,7 +31,7 @@ docker buildx build --platform linux/amd64 -t oh-my-commic:latest --load .
 > 用户管理相关 env（均可选）：`ADMIN_USERNAME`/`ADMIN_PASSWORD`/`ADMIN_EMAIL` 播种管理员（空用户名=不播种，非法即 fatal）；`INVITE_CODE` 指定全局邀请码（缺省则随机生成，启动时打日志 `邀请码: ...` 供分发）；`INVITE_MAX_USES` 每个邀请码可注册人数（默认 10，轮换重置，`0`=不限制）；注册赠送积分复用 `SIGNUP_CREDITS`（默认 100）。
 
 ## 架构 / 模块（`internal/`）
-`models` 数据结构 · `config` 环境变量 · `db` SQLite+迁移 · `auth` 登录/session(持久化)/隔离中间件 · `book`/`asset`/`chapter`/`panel` CRUD · `community` 社区**跨表只读**(公开 feed 列表 + 公开阅读详情) + 点赞/独立访客浏览计数 · `comicify` 资产漫画化(Seedream 图生图) · `ai` 千问文本+两段式提示词+Seedream 生图客户端 · `render` 单格出图编排 · `story` 编排(storyboard-chat/process) · `imageutil` 参考图缩放 · `storage` 本地存图 · `httpx` 路由+SPA托管+请求日志。
+`models` 数据结构 · `config` 环境变量 · `db` SQLite+迁移 · `auth` 登录/session(持久化)/隔离中间件 · `book`/`asset`/`chapter`/`panel` CRUD · `community` 社区**跨表只读**(公开 feed 列表 + 公开阅读详情) + 点赞/独立访客浏览计数 · `comicify` 资产漫画化(Seedream 图生图) · `ai` 千问文本+两段式提示词+Seedream 生图客户端 · `render` 单格出图编排 · `story` 编排(storyboard-chat/process) · `imageutil` 参考图缩放 · `storage` 本地存图 · `httpx` 路由+SPA托管+请求日志+Prometheus 指标(`/metrics` 公开)。
 前端关键：`AppShell`(应用壳=左栏 `SideNav`[Logo+社区/我的漫画 tab+底部 `SideNavUser` 用户区]+右侧 `<Outlet/>`；响应式) · `CommunityView`(社区内容区=`HeroBanner`+精选 `FeaturedRow`+`SortToggle`+`CommunityCard` 网格+空态) · `MyBooksView`(书架内容区，从 Bookshelf 抽出去顶栏) · `CommunityReader`(全屏公开阅读) · `ChatStoryboard`(第1段对话) · `StoryboardPanelCard`(单格可编辑) · `PanelGrid`/`PanelCard`(出图) · `BookReader`(翻页阅读) · `reader/BookReaderView`(私有/公开共用展示层)。
 
 ## 核心约定（务必遵守）
@@ -44,7 +44,7 @@ docker buildx build --platform linux/amd64 -t oh-my-commic:latest --load .
 - **社区公开只读（隐私）**：公开端点（`/api/v1/community/*`）走 `auth.OptionalUser`（可选读 session、**绝不 401**），严格 `is_public=1` 过滤——非公开/不存在一律 **404**（不泄露存在性）；作者**只**暴露 `nickname`+`avatarUrl`（**绝不** username/email）；公开阅读详情**不含**章节 `conversation`/`panelCount`。owner 发布/下架走 `PUT /api/v1/books/{id}/visibility`（`book.SetVisibility`：发布置 `is_public=1`+`published_at`，下架保留 `published_at`）；点赞端点走 `RequireUser`。
 - **提示词**：只在 `internal/ai/prompts.go`、`internal/render/service.go`(stylePrefix+buildPrompt)、`internal/comicify/prompts.go`。改提示词看 `docs/ARCHITECTURE-AND-PROMPTS.md`。
 - **迁移**：只用幂等 `ALTER TABLE ADD COLUMN`（`isDuplicateColumn` 容错），旧库不重建。
-- **API 契约（前后端单一真相 = `docs/openapi.yaml`，OpenAPI 3.1）**：所有业务端点在 `/api/v1/*`（handler 用**资源相对路径** mount，版本前缀集中在 `internal/httpx/router.go` 的 `r.Route("/api/v1", ...)`）；`GET /api/health` **不**版本化。**改任何端点（路径/字段/状态码）必须同步更新 `docs/openapi.yaml`**——
+- **API 契约（前后端单一真相 = `docs/openapi.yaml`，OpenAPI 3.1）**：所有业务端点在 `/api/v1/*`（handler 用**资源相对路径** mount，版本前缀集中在 `internal/httpx/router.go` 的 `r.Route("/api/v1", ...)`）；`GET /api/health`、`GET /metrics`(Prometheus) **不**版本化、**不**入 openapi(与 health 一致，运维端点)。**改任何端点（路径/字段/状态码）必须同步更新 `docs/openapi.yaml`**——
   - **后端**：契约 E2E（`test/contract`，`kin-openapi` 校验每个真实响应）会挡住跑偏，跑在 `go test`/CI 里；
   - **前端**：`web/src/api`（`client.ts` 路径、`types.ts` 数据结构）也以 openapi.yaml 为准，两端共用同一契约；
   - 人读概览见 `docs/frontend-api.md`（只是概览，以 openapi.yaml 为准）。
