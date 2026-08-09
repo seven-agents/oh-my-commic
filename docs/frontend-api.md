@@ -27,15 +27,15 @@
 
 ## 端点速查（详情见 openapi.yaml）
 - **认证**：
-  - `POST /api/v1/register`：邀请码闸门注册，体 `{username, password, email, inviteCode, nickname?}`；成功即登录（201 + set `session`）。邀请码错误/字段非法 400；用户名或邮箱已占用 409。
+  - `POST /api/v1/register`：邀请码闸门注册，体 `{username, password, email, inviteCode, nickname?}`；成功即登录（201 + set `session`）。邀请码错误/字段非法 400；**邀请码正确但名额已用完 403**；用户名或邮箱已占用 409。
   - `POST /api/v1/login`：体 `{username, password}`（**用户名登录**，非邮箱）；成功 set `session` cookie 返回当前用户；账号或密码错误一律 401（不区分）。
   - `POST /api/v1/logout`、`GET /api/v1/me`（含实时积分余额）
 - **当前用户资料**：
   - `PUT /api/v1/me/profile`：体 `{nickname, age, gender}`，改可编辑资料，返回刷新后的用户。
   - `POST /api/v1/me/avatar`：`multipart/form-data` 单文件字段 `file`（png/jpg/webp，≤2MB），返回含 `avatarUrl` 的用户。
 - **管理员（仅 role=admin，否则 403）**：
-  - `GET /api/v1/admin/invite-code`：读当前全局邀请码 `{inviteCode}`。
-  - `POST /api/v1/admin/invite-code/rotate`：无 body，轮换并返回新邀请码 `{inviteCode}`。
+  - `GET /api/v1/admin/invite-code`：读当前邀请码 + 名额使用 `{inviteCode, used, limit}`（`limit=0` 表示不限）。
+  - `POST /api/v1/admin/invite-code/rotate`：无 body，轮换并返回新码（名额已重置）`{inviteCode, used, limit}`。
 - **书**：`GET|POST /api/v1/books`、`GET|PUT|DELETE /api/v1/books/{id}`
 - **资产**：`POST /api/v1/books/{bookId}/upload`；`GET|POST /api/v1/books/{bookId}/characters`、`PUT|DELETE .../characters/{id}`、`POST .../characters/{id}/regenerate`（对当前形象图重画，无 body，扣 1 积分/失败退还/余额不足 402/无本地图 400）；`scenes` 同构
 - **章节**：`GET|POST /api/v1/books/{bookId}/chapters`、`POST /api/v1/books/{bookId}/cover-chapter`、`GET|DELETE /api/v1/chapters/{id}`、`PUT /api/v1/chapters/{id}/status`

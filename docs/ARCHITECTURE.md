@@ -154,14 +154,14 @@ erDiagram
         string viewerKey PK "u:{id} | anon:{clientId}"
     }
     SETTINGS {
-        string key PK "如 invite_code"
+        string key PK "invite_code / invite_used"
         string value
     }
 ```
 
 - **一本书 = 一个宇宙**：`Book` 顶层单元，自带 `Character/Scene` 库跨章复用。
 - **社区两表**：`book_likes`、`book_views` 均用**复合主键去重**；feed 索引 `idx_books_public_published`。
-- **全局邀请码**存 `settings` 表、可轮换。
+- **全局邀请码**存 `settings` 表（`invite_code` 行）、可轮换；**注册名额限制**复用同表的 `invite_used` 行计数（注册成功原子 `+1`、`INVITE_MAX_USES` 为上限、轮换重置，缺省=0 兼容旧库）——**键值表加一行而非加表/列，零迁移**。
 
 ---
 

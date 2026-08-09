@@ -131,6 +131,8 @@ docker compose logs -f    # 看启动日志（首次会打印随机邀请码，�
 
 打开 `http://<服务器IP>/` 即可。用 `.env` 里的 `ADMIN_USERNAME`/`ADMIN_PASSWORD` 登录，进「个人资料」查看/轮换邀请码，把邀请码发给要注册的人。
 
+> 每个邀请码有**注册名额上限**（`INVITE_MAX_USES`，默认 10）：个人资料页会显示「名额 已用/上限」，用满后新用户注册返回 403，此时**轮换邀请码**即可获得新码 + 重新计名额。想调整上限：改 `.env` 的 `INVITE_MAX_USES`（`0`=不限）后 `docker compose up -d` 重启。
+
 **3) 升级到新版本**：
 
 ```bash
