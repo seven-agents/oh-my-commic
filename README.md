@@ -110,6 +110,7 @@ cd web && npm install && npm run dev
 | `RENDER_MAX_REFS` | 每格出图最多参考图数（≤10） | `10` |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` / `ADMIN_EMAIL` | 启动时按此播种管理员（空用户名=不播种；用户名/密码非法则 fatal） | 空 |
 | `INVITE_CODE` | 全局邀请码；**空=注册未开放**，缺省则随机生成并打日志 `邀请码: ...` | 随机 |
+| `INVITE_MAX_USES` | 每个邀请码可注册人数上限；轮换后名额重置，`0`=不限制 | `10` |
 | `SIGNUP_CREDITS` | 注册赠送积分（出图/漫画化各扣 1，失败退还） | `100` |
 
 > ⚠️ 切勿把 API key 提交到 git。`.env`、`*.db`、`web/dist/`、`web/node_modules/` 均已在 `.gitignore` 中排除。

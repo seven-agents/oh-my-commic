@@ -41,8 +41,8 @@ function makeUser(role: 'admin' | 'user'): User {
 
 describe('Profile 邀请码卡片显隐', () => {
   beforeEach(() => {
-    getInviteCode.mockReset().mockResolvedValue({ inviteCode: 'ABC123' })
-    rotateInviteCode.mockReset().mockResolvedValue({ inviteCode: 'XYZ789' })
+    getInviteCode.mockReset().mockResolvedValue({ inviteCode: 'ABC123', used: 3, limit: 10 })
+    rotateInviteCode.mockReset().mockResolvedValue({ inviteCode: 'XYZ789', used: 0, limit: 10 })
   })
 
   it('admin 显示邀请码卡片并请求邀请码', async () => {
@@ -52,6 +52,8 @@ describe('Profile 邀请码卡片显隐', () => {
     expect(getInviteCode).toHaveBeenCalledTimes(1)
     // 等异步拉码落地，避免 act 告警
     expect(await screen.findByText('ABC123')).toBeInTheDocument()
+    // 名额使用情况一并展示（已用 3/上限 10）
+    expect(await screen.findByText(/名额\s*3\/10/)).toBeInTheDocument()
   })
 
   it('普通用户不渲染邀请码卡片且不请求', () => {

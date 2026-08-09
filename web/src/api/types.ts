@@ -153,3 +153,10 @@ export interface LikeResult {
   likeCount: number
   liked: boolean
 }
+
+// 邀请码状态（仅管理员）：当前码 + 已用名额 / 上限（limit 为 0 表示不限制）。
+export interface InviteStatus {
+  inviteCode: string
+  used: number
+  limit: number
+}

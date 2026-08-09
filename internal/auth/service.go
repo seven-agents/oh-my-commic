@@ -15,6 +15,11 @@ var (
 	// ErrBadInvite is returned by Register when the supplied invite code does
 	// not match the current global invite code.
 	ErrBadInvite = errors.New("邀请码不正确")
+	// ErrInviteExhausted is returned by Register when the invite code is correct
+	// but its usage limit has already been reached. Distinct from ErrBadInvite so
+	// callers can tell the visitor "the code is full" rather than "the code is
+	// wrong".
+	ErrInviteExhausted = errors.New("邀请码名额已用完")
 	// ErrInvalidCredentials is returned by Login when the username is unknown or
 	// the password does not match. It deliberately does not distinguish between
 	// the two so callers cannot probe which usernames exist.
@@ -29,13 +34,30 @@ type Service struct {
 	invites       *InviteRepo
 	sess          *Session
 	signupCredits int
+	inviteMaxUses int
 }
 
 // NewService wires a Service to its user repository, invite repository and
 // session store. signupCredits is the starting image-credit balance granted to
-// every newly registered user.
-func NewService(repo *UserRepo, invites *InviteRepo, sess *Session, signupCredits int) *Service {
-	return &Service{repo: repo, invites: invites, sess: sess, signupCredits: signupCredits}
+// every newly registered user. inviteMaxUses caps registrations per invite code
+// (0 = unlimited).
+func NewService(repo *UserRepo, invites *InviteRepo, sess *Session, signupCredits, inviteMaxUses int) *Service {
+	return &Service{
+		repo:          repo,
+		invites:       invites,
+		sess:          sess,
+		signupCredits: signupCredits,
+		inviteMaxUses: inviteMaxUses,
+	}
+}
+
+// InviteStatus is the admin view of the invite code: the code itself plus how
+// many of its allotted registrations have been used and the limit (0 =
+// unlimited).
+type InviteStatus struct {
+	Code  string `json:"inviteCode"`
+	Used  int    `json:"used"`
+	Limit int    `json:"limit"`
 }
 
 // Sessions exposes the underlying session store so HTTP handlers can resolve
@@ -79,6 +101,19 @@ func (s *Service) Register(in RegisterInput) (token string, u models.User, err e
 		return "", models.User{}, ErrBadInvite
 	}
 
+	// Cheap early gate: if the code is already exhausted, reject before spending
+	// bcrypt cost. The authoritative check is the atomic Acquire below (this read
+	// is only for fast, friendly rejection under normal traffic).
+	if s.inviteMaxUses > 0 {
+		used, uErr := s.invites.Used()
+		if uErr != nil {
+			return "", models.User{}, fmt.Errorf("register: read invite usage: %w", uErr)
+		}
+		if used >= s.inviteMaxUses {
+			return "", models.User{}, ErrInviteExhausted
+		}
+	}
+
 	if err := ValidateUsername(in.Username); err != nil {
 		return "", models.User{}, err
 	}
@@ -99,6 +134,17 @@ func (s *Service) Register(in RegisterInput) (token string, u models.User, err e
 		return "", models.User{}, fmt.Errorf("register: hash password: %w", err)
 	}
 
+	// Atomically claim a slot. This is race-safe: concurrent registrations can
+	// never push the counter past the limit. A claimed slot is released below if
+	// user creation then fails, so only real sign-ups consume the allowance.
+	ok, err := s.invites.Acquire(s.inviteMaxUses)
+	if err != nil {
+		return "", models.User{}, fmt.Errorf("register: claim invite slot: %w", err)
+	}
+	if !ok {
+		return "", models.User{}, ErrInviteExhausted
+	}
+
 	u, err = s.repo.Create(NewUser{
 		Username:     in.Username,
 		Email:        email,
@@ -108,6 +154,13 @@ func (s *Service) Register(in RegisterInput) (token string, u models.User, err e
 		Credits:      s.signupCredits,
 	})
 	if err != nil {
+		// Registration failed after claiming a slot — release it so a taken
+		// username / email does not permanently burn an invite allowance.
+		if relErr := s.invites.Release(); relErr != nil {
+			// Best-effort: log-free package, so wrap for the caller's context but
+			// still surface the original registration error as the cause.
+			return "", models.User{}, fmt.Errorf("register %q: %w (slot release also failed: %v)", in.Username, err, relErr)
+		}
 		// Unique-constraint sentinels are passed through untouched so handlers
 		// can map them to field-specific 409s.
 		if errors.Is(err, ErrUsernameTaken) || errors.Is(err, ErrEmailTaken) {
@@ -221,22 +274,28 @@ func (s *Service) SeedAdmin(username, password, email string, credits int) error
 	return nil
 }
 
-// InviteCode returns the current global invite code (admin view).
-func (s *Service) InviteCode() (string, error) {
+// InviteCode returns the current global invite code and its usage against the
+// configured limit (admin view).
+func (s *Service) InviteCode() (InviteStatus, error) {
 	code, err := s.invites.Get()
 	if err != nil {
-		return "", fmt.Errorf("invite code: %w", err)
+		return InviteStatus{}, fmt.Errorf("invite code: %w", err)
 	}
-	return code, nil
+	used, err := s.invites.Used()
+	if err != nil {
+		return InviteStatus{}, fmt.Errorf("invite code: %w", err)
+	}
+	return InviteStatus{Code: code, Used: used, Limit: s.inviteMaxUses}, nil
 }
 
-// RotateInvite generates and persists a fresh invite code, returning it.
-func (s *Service) RotateInvite() (string, error) {
+// RotateInvite generates and persists a fresh invite code (resetting its usage
+// counter to 0) and returns the new status.
+func (s *Service) RotateInvite() (InviteStatus, error) {
 	code, err := s.invites.Rotate()
 	if err != nil {
-		return "", fmt.Errorf("rotate invite: %w", err)
+		return InviteStatus{}, fmt.Errorf("rotate invite: %w", err)
 	}
-	return code, nil
+	return InviteStatus{Code: code, Used: 0, Limit: s.inviteMaxUses}, nil
 }
 
 // SeedInvite ensures an invite code exists and returns the effective value. When

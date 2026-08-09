@@ -48,7 +48,7 @@ func main() {
 	// userRepo doubles as the render/comicify credit ledger (Spend/Refund).
 	userRepo := auth.NewUserRepo(d)
 	inviteRepo := auth.NewInviteRepo(d)
-	authSvc := auth.NewService(userRepo, inviteRepo, sess, cfg.SignupCredits)
+	authSvc := auth.NewService(userRepo, inviteRepo, sess, cfg.SignupCredits, cfg.InviteMaxUses)
 	authHandler := auth.NewHandler(authSvc, media)
 
 	// Seed the registration gate and the initial admin. db.Open has already run

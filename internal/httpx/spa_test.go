@@ -29,7 +29,7 @@ func newSPATestRouter(t *testing.T, dist string) http.Handler {
 
 	sess := auth.NewSession(nil)
 	authHandler := auth.NewHandler(
-		auth.NewService(auth.NewUserRepo(d), auth.NewInviteRepo(d), sess, 100),
+		auth.NewService(auth.NewUserRepo(d), auth.NewInviteRepo(d), sess, 100, 0),
 		storage.Local{Root: t.TempDir()},
 	)
 	bookHandler := book.NewHandler(book.NewService(book.NewRepo(d)))
