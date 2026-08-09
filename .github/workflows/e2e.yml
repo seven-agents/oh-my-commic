@@ -54,6 +54,9 @@ jobs:
           WEB_DIST: web/dist
           # 播种 admin + 放行邀请码注册（假值），E2E 才能走通注册→登录→改昵称。
           INVITE_CODE: welcome123
+          # E2E 多个 spec 共用一个 server 和同一个邀请码注册多次；关闭名额限制
+          # （0=不限），使 E2E 与邀请码限额解耦——限额本身由单测/契约测试覆盖。
+          INVITE_MAX_USES: "0"
           ADMIN_USERNAME: admin
           ADMIN_PASSWORD: Passw0rd1
         run: |

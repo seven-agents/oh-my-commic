@@ -50,7 +50,7 @@ paths:
       description: >
         用邀请码注册。成功后立即登录（set `session` cookie）并返回新用户
         （role=user，含初始积分）。邀请码错误或字段非法返回 400；
-        用户名或邮箱已被占用返回 409。
+        邀请码正确但名额已用完返回 403；用户名或邮箱已被占用返回 409。
       security: []
       requestBody:
         required: true
@@ -72,6 +72,12 @@ paths:
                 $ref: "#/components/schemas/User"
         "400":
           $ref: "#/components/responses/BadRequest"
+        "403":
+          description: 邀请码正确但名额已用完
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "409":
           description: 用户名或邮箱已被占用
           content:
@@ -1222,10 +1228,16 @@ components:
     InviteCode:
       type: object
       additionalProperties: false
-      required: [inviteCode]
+      required: [inviteCode, used, limit]
       properties:
         inviteCode:
           type: string
+        used:
+          type: integer
+          description: 当前邀请码已使用的注册名额数
+        limit:
+          type: integer
+          description: 每个邀请码的注册名额上限；0 表示不限制
 
     User:
       type: object

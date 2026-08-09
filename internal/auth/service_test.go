@@ -25,7 +25,9 @@ func newTestService(t *testing.T, signupCredits int) (*Service, string) {
 		t.Fatalf("seed invite: %v", err)
 	}
 
-	svc := NewService(NewUserRepo(d), invites, NewSession(nil), signupCredits)
+	// inviteMaxUses = 0 (unlimited) keeps existing multi-registration tests
+	// unaffected; the usage-limit behavior is covered by dedicated tests.
+	svc := NewService(NewUserRepo(d), invites, NewSession(nil), signupCredits, 0)
 	return svc, code
 }
 
@@ -118,7 +120,7 @@ func TestRegisterRejectedWhenInviteUnconfigured(t *testing.T) {
 
 	// Deliberately do NOT seed an invite code.
 	repo := NewUserRepo(d)
-	svc := NewService(repo, NewInviteRepo(d), NewSession(nil), 10)
+	svc := NewService(repo, NewInviteRepo(d), NewSession(nil), 10, 0)
 
 	cases := []struct {
 		name       string
@@ -374,23 +376,117 @@ func TestInviteCodeAndRotate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("invite code: %v", err)
 	}
-	if got != code {
-		t.Fatalf("invite code should be %q, got %q", code, got)
+	if got.Code != code {
+		t.Fatalf("invite code should be %q, got %q", code, got.Code)
 	}
 
 	rotated, err := svc.RotateInvite()
 	if err != nil {
 		t.Fatalf("rotate invite: %v", err)
 	}
-	if rotated == "" || rotated == code {
-		t.Fatalf("rotate should produce a new non-empty code, got %q", rotated)
+	if rotated.Code == "" || rotated.Code == code {
+		t.Fatalf("rotate should produce a new non-empty code, got %q", rotated.Code)
 	}
 
 	// Registration now requires the rotated code; the old one is rejected.
 	if _, _, err := svc.Register(validRegister(code, "olddie")); !errors.Is(err, ErrBadInvite) {
 		t.Fatalf("old invite code should be rejected after rotate, got %v", err)
 	}
-	if _, _, err := svc.Register(validRegister(rotated, "newok")); err != nil {
+	if _, _, err := svc.Register(validRegister(rotated.Code, "newok")); err != nil {
+		t.Fatalf("register with rotated code should succeed: %v", err)
+	}
+}
+
+// newLimitedService builds a Service with a seeded invite code and a finite
+// per-code registration limit, returning the service and the seeded code.
+func newLimitedService(t *testing.T, limit int) (*Service, string) {
+	t.Helper()
+	d, err := db.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() { d.Close() })
+
+	invites := NewInviteRepo(d)
+	code, err := invites.Seed("invite01")
+	if err != nil {
+		t.Fatalf("seed invite: %v", err)
+	}
+	svc := NewService(NewUserRepo(d), invites, NewSession(nil), 100, limit)
+	return svc, code
+}
+
+func TestRegisterEnforcesInviteLimit(t *testing.T) {
+	svc, code := newLimitedService(t, 2)
+
+	// First two registrations consume the two allowed slots.
+	if _, _, err := svc.Register(validRegister(code, "kid1")); err != nil {
+		t.Fatalf("register #1 should succeed: %v", err)
+	}
+	if _, _, err := svc.Register(validRegister(code, "kid2")); err != nil {
+		t.Fatalf("register #2 should succeed: %v", err)
+	}
+	// Third with the correct code is refused as exhausted (not ErrBadInvite).
+	_, _, err := svc.Register(validRegister(code, "kid3"))
+	if !errors.Is(err, ErrInviteExhausted) {
+		t.Fatalf("register past limit should be ErrInviteExhausted, got %v", err)
+	}
+
+	// Admin view reflects the usage.
+	status, err := svc.InviteCode()
+	if err != nil {
+		t.Fatalf("invite status: %v", err)
+	}
+	if status.Used != 2 || status.Limit != 2 {
+		t.Fatalf("status used/limit = %d/%d, want 2/2", status.Used, status.Limit)
+	}
+}
+
+func TestRegisterFailureReleasesInviteSlot(t *testing.T) {
+	svc, code := newLimitedService(t, 2)
+
+	if _, _, err := svc.Register(validRegister(code, "taken")); err != nil {
+		t.Fatalf("register should succeed: %v", err)
+	}
+	// A duplicate username claims a slot (1 < 2 passes the gate) then fails at
+	// user creation; the claimed slot must be released so a failure does not
+	// permanently burn the allowance.
+	if _, _, err := svc.Register(validRegister(code, "taken")); !errors.Is(err, ErrUsernameTaken) && !errors.Is(err, ErrEmailTaken) {
+		t.Fatalf("duplicate registration should be a unique-constraint error, got %v", err)
+	}
+	status, err := svc.InviteCode()
+	if err != nil {
+		t.Fatalf("invite status: %v", err)
+	}
+	if status.Used != 1 {
+		t.Fatalf("after failed dup registration, used = %d, want 1 (slot released, not 2)", status.Used)
+	}
+	// The released slot is reusable by a genuinely new user.
+	if _, _, err := svc.Register(validRegister(code, "newkid")); err != nil {
+		t.Fatalf("released slot should be reusable by a new user: %v", err)
+	}
+	if status, _ := svc.InviteCode(); status.Used != 2 {
+		t.Fatalf("after reuse, used = %d, want 2", status.Used)
+	}
+}
+
+func TestRegisterRotateGivesFreshAllowance(t *testing.T) {
+	svc, code := newLimitedService(t, 1)
+	if _, _, err := svc.Register(validRegister(code, "first")); err != nil {
+		t.Fatalf("register should succeed: %v", err)
+	}
+	if _, _, err := svc.Register(validRegister(code, "second")); !errors.Is(err, ErrInviteExhausted) {
+		t.Fatalf("second should be exhausted, got %v", err)
+	}
+	// Rotating hands out a fresh code with a reset counter.
+	rotated, err := svc.RotateInvite()
+	if err != nil {
+		t.Fatalf("rotate: %v", err)
+	}
+	if rotated.Used != 0 || rotated.Limit != 1 {
+		t.Fatalf("rotated status used/limit = %d/%d, want 0/1", rotated.Used, rotated.Limit)
+	}
+	if _, _, err := svc.Register(validRegister(rotated.Code, "third")); err != nil {
 		t.Fatalf("register with rotated code should succeed: %v", err)
 	}
 }

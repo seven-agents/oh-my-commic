@@ -43,6 +43,10 @@ type Config struct {
 	// InviteCode gates self-registration (env INVITE_CODE). Optional; empty means
 	// no invite gate configured. Never fatal when unset.
 	InviteCode string
+	// InviteMaxUses caps how many successful registrations a single invite code
+	// permits before it is exhausted (env INVITE_MAX_USES, default 10). Rotating
+	// the code resets the counter. 0 means unlimited (the pre-limit behavior).
+	InviteMaxUses int
 }
 
 // defaultSignupCredits is the starting balance granted at registration.
@@ -55,6 +59,24 @@ const defaultImageCreditCost = 1
 // Seedream 4.0 accepts up to 10 reference images per request, so the default
 // matches that ceiling.
 const defaultRenderMaxRefs = 10
+
+// defaultInviteMaxUses caps registrations per invite code by default.
+const defaultInviteMaxUses = 10
+
+// getIntNonNeg is like getInt but accepts 0 as a valid, meaningful value (used
+// where 0 carries semantics, e.g. INVITE_MAX_USES=0 meaning "unlimited"). A
+// negative or non-numeric value falls back to def.
+func getIntNonNeg(k string, def int) int {
+	v := os.Getenv(k)
+	if v == "" {
+		return def
+	}
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return def
+	}
+	return n
+}
 
 // getInt returns the integer value of env var k, or def when unset/empty or not
 // a positive integer (a safe fallback so a bad env value never breaks startup).
@@ -103,6 +125,7 @@ func Load() (Config, error) {
 		AdminPassword: os.Getenv("ADMIN_PASSWORD"),
 		AdminEmail:    os.Getenv("ADMIN_EMAIL"),
 		InviteCode:    os.Getenv("INVITE_CODE"),
+		InviteMaxUses: getIntNonNeg("INVITE_MAX_USES", defaultInviteMaxUses),
 	}
 	if c.DashScopeKey == "" {
 		return c, errors.New("DASHSCOPE_API_KEY 未设置")

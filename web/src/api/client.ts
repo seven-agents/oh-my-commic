@@ -1,7 +1,7 @@
 // 轻量 fetch 封装。所有业务路径已包含版本化前缀 /api/v1，base 为空字符串。
 // 始终携带 cookie（credentials: 'include'）。非 2xx 抛出带类型的 ApiError。
 
-import type { User, Book, CommunityBook, CommunityBookDetail, CommunitySort, LikeResult } from './types'
+import type { User, Book, CommunityBook, CommunityBookDetail, CommunitySort, LikeResult, InviteStatus } from './types'
 
 export class ApiError extends Error {
   status: number
@@ -108,13 +108,13 @@ export const api = {
   uploadAvatar: (file: File) =>
     api.upload<User>('/api/v1/me/avatar', file),
 
-  // 读取当前全局邀请码（仅管理员）。
+  // 读取当前全局邀请码 + 名额使用情况（仅管理员）。
   getInviteCode: () =>
-    request<{ inviteCode: string }>('GET', '/api/v1/admin/invite-code'),
+    request<InviteStatus>('GET', '/api/v1/admin/invite-code'),
 
-  // 轮换全局邀请码（仅管理员），返回新的邀请码。
+  // 轮换全局邀请码（仅管理员），返回新码（名额已重置）。
   rotateInviteCode: () =>
-    request<{ inviteCode: string }>('POST', '/api/v1/admin/invite-code/rotate'),
+    request<InviteStatus>('POST', '/api/v1/admin/invite-code/rotate'),
 
   // 社区公开 feed（分页 + 排序）。匿名可调。
   listCommunity: (opts: { sort?: CommunitySort; limit?: number; offset?: number } = {}) => {

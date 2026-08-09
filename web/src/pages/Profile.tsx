@@ -208,6 +208,8 @@ export default function Profile() {
 // 邀请码卡片：仅管理员渲染。进页拉当前邀请码，可轮换。
 function InviteCodeCard() {
   const [code, setCode] = useState('')
+  const [used, setUsed] = useState(0)
+  const [limit, setLimit] = useState(0)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
 
@@ -215,8 +217,12 @@ function InviteCodeCard() {
     let alive = true
     ;(async () => {
       try {
-        const { inviteCode } = await api.getInviteCode()
-        if (alive) setCode(inviteCode)
+        const status = await api.getInviteCode()
+        if (alive) {
+          setCode(status.inviteCode)
+          setUsed(status.used)
+          setLimit(status.limit)
+        }
       } catch (err) {
         if (alive) setError(errorMessage(err))
       } finally {
@@ -231,12 +237,17 @@ function InviteCodeCard() {
   const { submit: onRotate, submitting: rotating } = useSubmitOnce(async () => {
     setError('')
     try {
-      const { inviteCode } = await api.rotateInviteCode()
-      setCode(inviteCode)
+      const status = await api.rotateInviteCode()
+      setCode(status.inviteCode)
+      setUsed(status.used)
+      setLimit(status.limit)
     } catch (err) {
       setError(errorMessage(err))
     }
   })
+
+  // limit 为 0 表示不限制；否则展示"已用 X/上限"，用尽时高亮提示。
+  const exhausted = limit > 0 && used >= limit
 
   return (
     <Card className="flex flex-col gap-4">
@@ -246,7 +257,9 @@ function InviteCodeCard() {
           仅管理员
         </span>
       </div>
-      <p className="text-sm text-ink-soft/70">新用户注册时需要填写此邀请码。轮换后旧码立即失效。</p>
+      <p className="text-sm text-ink-soft/70">
+        新用户注册时需要填写此邀请码。轮换后旧码立即失效，名额重新计算。
+      </p>
 
       {loading ? (
         <div className="flex items-center gap-2 text-ink-soft">
@@ -254,13 +267,29 @@ function InviteCodeCard() {
           <span className="text-sm">正在读取…</span>
         </div>
       ) : (
-        <div className="flex flex-wrap items-center gap-3">
-          <code className="select-all rounded-2xl bg-cream/80 px-4 py-3 font-mono text-lg font-bold tracking-wider text-ink">
-            {code || '—'}
-          </code>
-          <Button variant="ghost" onClick={onRotate} loading={rotating} className="text-sm">
-            🔄 轮换
-          </Button>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <code className="select-all rounded-2xl bg-cream/80 px-4 py-3 font-mono text-lg font-bold tracking-wider text-ink">
+              {code || '—'}
+            </code>
+            <Button variant="ghost" onClick={onRotate} loading={rotating} className="text-sm">
+              🔄 轮换
+            </Button>
+          </div>
+          {limit > 0 ? (
+            <span
+              className={`inline-flex w-fit items-center gap-1 rounded-full px-3 py-1 text-xs font-semibold ${
+                exhausted ? 'bg-coral/15 text-coral' : 'bg-meadow/20 text-meadow-deep'
+              }`}
+            >
+              {exhausted ? '名额已用完' : '名额'} {used}/{limit}
+              {exhausted && ' · 轮换可再邀请'}
+            </span>
+          ) : (
+            <span className="inline-flex w-fit items-center rounded-full bg-sky/15 px-3 py-1 text-xs font-semibold text-sky-deep">
+              已邀请 {used} 人 · 不限名额
+            </span>
+          )}
         </div>
       )}
 

@@ -54,6 +54,100 @@ func TestInviteSetAndGet(t *testing.T) {
 	}
 }
 
+func TestInviteUsedDefaultsZero(t *testing.T) {
+	repo := newInviteRepo(t)
+	got, err := repo.Used()
+	if err != nil {
+		t.Fatalf("Used: %v", err)
+	}
+	if got != 0 {
+		t.Fatalf("Used on fresh DB = %d, want 0 (missing counter = grandfather)", got)
+	}
+}
+
+func TestInviteAcquireEnforcesLimit(t *testing.T) {
+	repo := newInviteRepo(t)
+	const limit = 3
+	for i := 1; i <= limit; i++ {
+		ok, err := repo.Acquire(limit)
+		if err != nil {
+			t.Fatalf("Acquire #%d: %v", i, err)
+		}
+		if !ok {
+			t.Fatalf("Acquire #%d should grant a slot (limit %d)", i, limit)
+		}
+		if used, _ := repo.Used(); used != i {
+			t.Fatalf("after Acquire #%d, Used = %d, want %d", i, used, i)
+		}
+	}
+	// Limit reached: further acquisitions are refused and the counter stays put.
+	ok, err := repo.Acquire(limit)
+	if err != nil {
+		t.Fatalf("Acquire over limit: %v", err)
+	}
+	if ok {
+		t.Fatal("Acquire past the limit should be refused")
+	}
+	if used, _ := repo.Used(); used != limit {
+		t.Fatalf("counter overshoot: Used = %d, want %d", used, limit)
+	}
+}
+
+func TestInviteAcquireUnlimited(t *testing.T) {
+	repo := newInviteRepo(t)
+	for i := 1; i <= 5; i++ {
+		ok, err := repo.Acquire(0) // 0 = unlimited
+		if err != nil {
+			t.Fatalf("Acquire #%d: %v", i, err)
+		}
+		if !ok {
+			t.Fatal("unlimited Acquire should always grant a slot")
+		}
+	}
+	if used, _ := repo.Used(); used != 5 {
+		t.Fatalf("unlimited still counts: Used = %d, want 5", used)
+	}
+}
+
+func TestInviteReleaseFloorsAtZero(t *testing.T) {
+	repo := newInviteRepo(t)
+	if _, err := repo.Acquire(10); err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	if err := repo.Release(); err != nil {
+		t.Fatalf("Release: %v", err)
+	}
+	if used, _ := repo.Used(); used != 0 {
+		t.Fatalf("after Release, Used = %d, want 0", used)
+	}
+	// Releasing again must not go negative.
+	if err := repo.Release(); err != nil {
+		t.Fatalf("Release (underflow guard): %v", err)
+	}
+	if used, _ := repo.Used(); used != 0 {
+		t.Fatalf("Release underflowed: Used = %d, want 0", used)
+	}
+}
+
+func TestInviteRotateResetsCounter(t *testing.T) {
+	repo := newInviteRepo(t)
+	if _, err := repo.Seed("start01234"); err != nil {
+		t.Fatalf("Seed: %v", err)
+	}
+	if _, err := repo.Acquire(10); err != nil {
+		t.Fatalf("Acquire: %v", err)
+	}
+	if used, _ := repo.Used(); used != 1 {
+		t.Fatalf("pre-rotate Used = %d, want 1", used)
+	}
+	if _, err := repo.Rotate(); err != nil {
+		t.Fatalf("Rotate: %v", err)
+	}
+	if used, _ := repo.Used(); used != 0 {
+		t.Fatalf("Rotate should reset counter, Used = %d, want 0", used)
+	}
+}
+
 func TestInviteSeedIdempotent(t *testing.T) {
 	repo := newInviteRepo(t)
 

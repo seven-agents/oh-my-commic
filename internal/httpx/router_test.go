@@ -43,7 +43,7 @@ func newTestRouter(t *testing.T) testEnv {
 	if err != nil {
 		t.Fatalf("seed invite: %v", err)
 	}
-	svc := auth.NewService(repo, invites, sess, 100)
+	svc := auth.NewService(repo, invites, sess, 100, 0)
 	authHandler := auth.NewHandler(svc, storage.Local{Root: t.TempDir()})
 	bookHandler := book.NewHandler(book.NewService(book.NewRepo(d)))
 
@@ -322,12 +322,16 @@ func TestAdminInviteRouteReturnsCode(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("admin GET invite: want 200, got %d", resp.StatusCode)
 	}
-	var body map[string]string
+	var body struct {
+		InviteCode string `json:"inviteCode"`
+		Used       int    `json:"used"`
+		Limit      int    `json:"limit"`
+	}
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
 		t.Fatal(err)
 	}
-	if body["inviteCode"] != env.code {
-		t.Fatalf("invite code = %q, want %q", body["inviteCode"], env.code)
+	if body.InviteCode != env.code {
+		t.Fatalf("invite code = %q, want %q", body.InviteCode, env.code)
 	}
 }
 

@@ -346,12 +346,23 @@ func TestAdminInviteCodeAndRotate(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("admin GET invite status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 	}
-	var got map[string]string
+	type inviteStatus struct {
+		InviteCode string `json:"inviteCode"`
+		Used       int    `json:"used"`
+		Limit      int    `json:"limit"`
+	}
+	var got inviteStatus
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if got["inviteCode"] != code {
-		t.Fatalf("invite code = %q, want %q", got["inviteCode"], code)
+	if got.InviteCode != code {
+		t.Fatalf("invite code = %q, want %q", got.InviteCode, code)
+	}
+	if got.Used != 0 {
+		t.Fatalf("fresh invite used = %d, want 0", got.Used)
+	}
+	if got.Limit != 0 { // newTestService uses inviteMaxUses=0 (unlimited)
+		t.Fatalf("invite limit = %d, want 0 (unlimited)", got.Limit)
 	}
 
 	// Rotate changes the code.
@@ -360,12 +371,15 @@ func TestAdminInviteCodeAndRotate(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("admin rotate status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 	}
-	var rotated map[string]string
+	var rotated inviteStatus
 	if err := json.Unmarshal(rec.Body.Bytes(), &rotated); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if rotated["inviteCode"] == "" || rotated["inviteCode"] == code {
-		t.Fatalf("rotate did not change code: old=%q new=%q", code, rotated["inviteCode"])
+	if rotated.InviteCode == "" || rotated.InviteCode == code {
+		t.Fatalf("rotate did not change code: old=%q new=%q", code, rotated.InviteCode)
+	}
+	if rotated.Used != 0 {
+		t.Fatalf("rotated invite used = %d, want 0", rotated.Used)
 	}
 }
 

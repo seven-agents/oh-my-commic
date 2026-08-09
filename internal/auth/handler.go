@@ -149,6 +149,11 @@ func (h *Handler) Register(w http.ResponseWriter, r *http.Request) {
 			// A bad invite code is a client input error, not an authorization
 			// failure, so it maps to 400 (not 403).
 			writeError(w, http.StatusBadRequest, "邀请码不正确")
+		case errors.Is(err, ErrInviteExhausted):
+			// The code is valid but full; tell the visitor so they ask for a new
+			// one rather than retrying the same (correct) code. 403: registration
+			// via this code is closed.
+			writeError(w, http.StatusForbidden, "这个邀请码的名额已经用完啦，向管理员要一个新的吧～")
 		case errors.Is(err, ErrUsernameTaken):
 			writeError(w, http.StatusConflict, "用户名已被占用")
 		case errors.Is(err, ErrEmailTaken):
@@ -297,26 +302,27 @@ func (h *Handler) UploadAvatar(w http.ResponseWriter, r *http.Request) {
 }
 
 // InviteCode handles GET /api/v1/admin/invite-code (admin only). It returns the
-// current global invite code as {"inviteCode": "..."}.
+// current global invite code plus its usage against the limit as
+// {"inviteCode": "...", "used": N, "limit": M}.
 func (h *Handler) InviteCode(w http.ResponseWriter, _ *http.Request) {
-	code, err := h.svc.InviteCode()
+	status, err := h.svc.InviteCode()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "读取邀请码失败")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"inviteCode": code})
+	writeJSON(w, http.StatusOK, status)
 }
 
 // RotateInvite handles POST /api/v1/admin/invite-code/rotate (admin only). It
-// generates and persists a fresh invite code and returns it as
-// {"inviteCode": "..."}.
+// generates and persists a fresh invite code (resetting its usage counter) and
+// returns it as {"inviteCode": "...", "used": 0, "limit": M}.
 func (h *Handler) RotateInvite(w http.ResponseWriter, _ *http.Request) {
-	code, err := h.svc.RotateInvite()
+	status, err := h.svc.RotateInvite()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "更新邀请码失败")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"inviteCode": code})
+	writeJSON(w, http.StatusOK, status)
 }
 
 // Logout handles POST /api/v1/logout. It revokes the current session (if any) and

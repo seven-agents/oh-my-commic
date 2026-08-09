@@ -91,7 +91,9 @@ func newTestApp(t *testing.T) *testApp {
 	userRepo := auth.NewUserRepo(d)
 
 	// SignupCredits fixed at 100 so the /me credits assertion is deterministic.
-	authSvc := auth.NewService(userRepo, auth.NewInviteRepo(d), sess, 100)
+	// inviteMaxUses = 0 (unlimited): the contract walk registers several users
+	// under one code; the usage-limit path has its own unit coverage.
+	authSvc := auth.NewService(userRepo, auth.NewInviteRepo(d), sess, 100, 0)
 	authHandler := auth.NewHandler(authSvc, media)
 
 	// Seed a known invite code so registration can proceed AI-free, and an admin
