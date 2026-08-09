@@ -1,0 +1,25 @@
+# oh-my-commic —— Prometheus 抓取配置样例
+#
+# oh-my-commic 在 /metrics 暴露 Prometheus 指标（公开、无鉴权，主端口即对外 80）。
+# 把下面的 scrape_configs 段并入你自己的 prometheus.yml 即可开始抓取。
+
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: oh-my-commic
+    metrics_path: /metrics
+    static_configs:
+      # 三选一：公网域名 / 服务器 IP+端口 / 与 app 同网络时的容器名
+      - targets: ['commic.1501.fun']
+      # - targets: ['<服务器IP>:80']
+      # - targets: ['app:8080']
+
+# ---- 常用 PromQL（面板/告警用）----
+# QPS（每秒请求数）：       sum(rate(http_requests_total[1m]))
+# 成功率（非 5xx 占比）：    sum(rate(http_requests_total{status!~"5.."}[5m]))
+#                          / sum(rate(http_requests_total[5m]))
+# P95 延时（按路由）：       histogram_quantile(0.95,
+#                            sum(rate(http_request_duration_seconds_bucket[5m])) by (le, route))
+# 注册用户数：              omc_registered_users
+# 按路由 QPS：              sum(rate(http_requests_total[1m])) by (route)

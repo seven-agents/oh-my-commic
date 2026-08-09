@@ -149,6 +149,30 @@ docker save sevenoxin/oh-my-commic:latest | gzip | ssh <server> 'gunzip | docker
 # 然后在服务器上 docker compose up -d
 ```
 
+## 📊 监控 / Prometheus 指标
+
+服务在 **`/metrics`** 暴露 Prometheus 指标（**公开、无鉴权**，主端口即对外 80，如 `http://<服务器IP>/metrics`）。开箱即用的指标：
+
+| 指标 | 类型 | 说明 |
+|---|---|---|
+| `http_requests_total{method,route,status}` | Counter | 请求总数 → **QPS**、**成功率** |
+| `http_request_duration_seconds{method,route}` | Histogram | 请求**延时**（p50/p95/p99） |
+| `omc_registered_users` | Gauge | **注册用户数**（抓取时查库，实时） |
+| `go_*` / `process_*` | — | Go 运行时（goroutine/内存/GC）与进程指标 |
+
+> `route` 标签用 **chi 路由模板**（如 `/api/v1/books/{id}`）而非真实路径，避免 ID 撑爆基数。
+
+常用 PromQL：
+
+```promql
+sum(rate(http_requests_total[1m]))                                             # QPS
+sum(rate(http_requests_total{status!~"5.."}[5m])) / sum(rate(http_requests_total[5m]))   # 成功率
+histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, route))  # P95 延时
+omc_registered_users                                                           # 用户数
+```
+
+抓取配置样例见 [`docs/prometheus.sample.yml`](docs/prometheus.sample.yml)（把 `scrape_configs` 段并入你的 `prometheus.yml`）。
+
 ## 📦 项目结构（规划）
 
 ```

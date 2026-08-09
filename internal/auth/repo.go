@@ -184,6 +184,16 @@ func (r *UserRepo) Credits(userID int64) (int, error) {
 	return u.Credits, nil
 }
 
+// Count returns the total number of registered users. It backs the
+// omc_registered_users Prometheus gauge, so it is a single cheap aggregate.
+func (r *UserRepo) Count() (int, error) {
+	var n int
+	if err := r.db.QueryRow(`SELECT COUNT(*) FROM users`).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count users: %w", err)
+	}
+	return n, nil
+}
+
 // scanUser reads a single user row. ctx describes the lookup for error context.
 // The Scan destinations must stay in lock-step with userColumns.
 func scanUser(row *sql.Row, ctx string) (models.User, error) {

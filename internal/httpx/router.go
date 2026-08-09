@@ -86,6 +86,18 @@ func NewRouter(deps Deps) http.Handler {
 	// long Cache-Control headers set on /media and /assets, not from gzip.
 	r.Use(middleware.Compress(5))
 
+	// Prometheus instrumentation. A live user-count gauge is wired when a user
+	// repository is available; the request counter + latency histogram are always
+	// recorded. Each router owns its own registry (test-safe).
+	var userCount func() (int, error)
+	if deps.UserRepo != nil {
+		userCount = deps.UserRepo.Count
+	}
+	m := newMetrics(userCount)
+	r.Use(m.middleware)
+	// Unversioned scrape endpoint (public, like /api/health).
+	r.Handle(metricsPath, m.handler())
+
 	// Unversioned health probe (docker-compose + CI depend on this stable path).
 	r.Get("/api/health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
